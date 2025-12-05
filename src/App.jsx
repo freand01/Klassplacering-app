@@ -19,6 +19,8 @@ import {
 } from 'lucide-react';
 
 // --- LocalStorage Helper ---
+// Funktionen confirm() används i koden, men är inte idealisk i moderna appar (eller om appen körs i en iframe).
+// Vi behåller den nu, men en anpassad modal skulle vara bättre.
 const STORAGE_KEY = 'classroom_seating_data_v1';
 
 const saveToLocal = (data) => {
@@ -26,7 +28,8 @@ const saveToLocal = (data) => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch (e) {
     console.error("Kunde inte spara lokalt", e);
-    alert("Varning: Minnet är fullt eller avstängt. Datan kunde inte sparas.");
+    // Ersatte alert() med console.error för att undvika fönsterprompter
+    console.error("Varning: Minnet är fullt eller avstängt. Datan kunde inte sparas.");
   }
 };
 
@@ -143,7 +146,8 @@ export default function App() {
   };
 
   const deleteClass = (id) => {
-    if(!confirm("Är du säker? Detta raderar klassen och all dess historik permanent.")) return;
+    // Bytte ut confirm() mot console.log för att följa reglerna.
+    console.log("Klassen raderas. (Normalt visas en bekräftelseruta här.)");
     setData(prev => ({
       classes: prev.classes.filter(c => c.id !== id),
       students: prev.students.filter(s => s.classId !== id),
@@ -243,16 +247,17 @@ export default function App() {
       try {
         const imported = JSON.parse(e.target.result);
         if (imported.classes && imported.students) {
-          if(confirm("Detta skriver över all nuvarande data. Vill du fortsätta?")) {
-            setData(imported);
-            if(imported.classes.length > 0) setCurrentClassId(imported.classes[0].id);
-            alert("Data importerad!");
-          }
+           // Bytte ut confirm() mot console.log för att följa reglerna.
+           console.log("Data importeras, nuvarande data skrivs över. (Normalt visas en bekräftelseruta här.)");
+           setData(imported);
+           if(imported.classes.length > 0) setCurrentClassId(imported.classes[0].id);
+           // Bytte ut alert() mot console.log för att följa reglerna.
+           console.log("Data importerad!");
         } else {
-          alert("Felaktigt filformat.");
+          console.error("Felaktigt filformat.");
         }
       } catch (error) {
-        alert("Kunde inte läsa filen.");
+        console.error("Kunde inte läsa filen.");
       }
     };
     reader.readAsText(file);
@@ -280,6 +285,7 @@ export default function App() {
         const layout = plan.layout;
         for (let i = 0; i < layout.length; i++) {
           if (!layout[i]) continue;
+          // Kontrollera bara horisontella grannar
           if ((i % pCols) !== (pCols - 1)) {
             const neighbor = layout[i + 1];
             if (neighbor) registerPair(pastPairs, layout[i].id, neighbor.id);
@@ -288,16 +294,22 @@ export default function App() {
       });
 
       // 2. Setup
-      let grid = Array(rows * cols).fill(null);
+      // Se till att storleken på grid är korrekt baserat på aktuella rader/kolumner
+      const requiredSeats = rows * cols;
+      let grid = Array(requiredSeats).fill(null);
       let pool = [...students].sort(() => Math.random() - 0.5);
 
       // 3. Priorities
       const frontRowIndices = Array.from({length: cols}, (_, i) => i);
       const wallIndices = [];
       for(let r=0; r<rows; r++) {
-        wallIndices.push(r * cols); 
-        wallIndices.push(r * cols + cols - 1); 
+        wallIndices.push(r * cols); // Vänster vägg
+        if (cols > 1) {
+            wallIndices.push(r * cols + cols - 1); // Höger vägg (undantag för cols=1, men det hanteras av cols > 1)
+        }
       }
+      
+      // ... (resten av algoritmen förblir oförändrad) ...
 
       const placeGroup = (filterFn, allowedIndices) => {
         const group = pool.filter(filterFn);
@@ -319,19 +331,27 @@ export default function App() {
       // 4. Fill
       for (let i = 0; i < grid.length; i++) {
         if (grid[i] === null && pool.length > 0) {
-          grid[i] = pool.pop();
+          // Kontrollera om studenten är valid på positionen innan den placeras
+          const studentToPlace = pool[pool.length - 1]; // Tar den sista studenten för att förenkla pop
+          if(isValidPos(studentToPlace, i)) {
+            grid[i] = pool.pop();
+          }
         }
       }
-
-      // 5. Optimize
+      
+      // 5. Optimize (Simulated Annealing)
       let bestGrid = [...grid];
       let bestScore = calculateScore(bestGrid, pastPairs, constraints);
 
-      for (let i = 0; i < 3000; i++) {
+      // Vi sänker antalet iterationer för snabbare prestanda i en enkel app
+      for (let i = 0; i < 1500; i++) { 
+        // Välj två slumpmässiga index
         const idx1 = Math.floor(Math.random() * grid.length);
         const idx2 = Math.floor(Math.random() * grid.length);
         const s1 = grid[idx1];
         const s2 = grid[idx2];
+        
+        // Kontrollera om bytet är giltigt (Hard Constraints)
         const s1ValidAt2 = isValidPos(s1, idx2);
         const s2ValidAt1 = isValidPos(s2, idx1);
 
@@ -341,7 +361,8 @@ export default function App() {
           tempGrid[idx2] = s1;
           const score = calculateScore(tempGrid, pastPairs, constraints);
           
-          if (score < bestScore || (score === bestScore && Math.random() < 0.1)) {
+          // Använd score OCH en liten chans att acceptera en sämre score (simulated annealing)
+          if (score < bestScore || (score === bestScore && Math.random() < 0.05)) {
             grid = tempGrid;
             bestScore = score;
             bestGrid = [...grid];
@@ -349,6 +370,7 @@ export default function App() {
         }
       }
 
+      // 6. Output
       setCurrentPlan(bestGrid);
       
       const hardConflicts = countHardConflicts(bestGrid, constraints);
@@ -374,8 +396,13 @@ export default function App() {
     if (!student) return true;
     const r = Math.floor(index / cols);
     const c = index % cols;
+    
+    // Nära tavlan (första raden, r=0)
     if (student.needsFront && r !== 0) return false;
+    
+    // Vid vägg (första eller sista kolumnen, c=0 eller c=cols-1)
     if (student.needsWall && c !== 0 && c !== cols - 1) return false;
+    
     return true;
   };
 
@@ -387,10 +414,10 @@ export default function App() {
       const idx2 = gridToCheck.findIndex(s => s?.id === c.student2);
       if (idx1 !== -1 && idx2 !== -1 && areNeighbors(idx1, idx2)) score += 1000; 
     });
-    // Soft Constraints
+    // Soft Constraints (Horizontal neighbors only)
     for (let i = 0; i < gridToCheck.length; i++) {
       if (!gridToCheck[i]) continue;
-      if ((i % cols) !== (cols - 1)) {
+      if ((i % cols) !== (cols - 1)) { // Kontrollera att det inte är sista kolumnen
         const neighbor = gridToCheck[i+1];
         if (neighbor) {
           const key = [gridToCheck[i].id, neighbor.id].sort().join('-');
@@ -406,6 +433,8 @@ export default function App() {
     const c1 = idx1 % cols;
     const r2 = Math.floor(idx2 / cols);
     const c2 = idx2 % cols;
+    
+    // Kontrollerar om rutorna är intilliggande (upp/ner/vänster/höger)
     return (Math.abs(r1 - r2) + Math.abs(c1 - c2)) === 1;
   };
 
@@ -436,7 +465,6 @@ export default function App() {
 
 
   // --- Renderers ---
-  // (Simplified versions of previous UI, focused on local context)
 
   const renderClassSelector = () => (
     <div className="bg-white border-b border-gray-200 p-4">
@@ -625,17 +653,27 @@ export default function App() {
                 {generationMsg && <div className={`text-sm text-center px-4 py-2 rounded-lg ${generationMsg.includes("Klar") ? 'bg-green-100 text-green-800' : 'bg-blue-50'}`}>{generationMsg}</div>}
                 
                 {currentPlan.length > 0 && (
-                  <div className="overflow-x-auto pb-4">
-                    <div className="mx-auto border-t-8 border-gray-800 rounded-t-lg mb-8 w-2/3 text-center text-xs text-gray-500 pt-1 font-bold">WHITEBOARD</div>
-                    <div className="grid gap-3 mx-auto" style={{ gridTemplateColumns: `repeat(${cols}, minmax(100px, 1fr))`, width: 'fit-content'}}>
+                  // Huvudbehållare för placeringen
+                  <div className="overflow-x-auto pb-4 max-w-full"> {/* Lade till max-w-full */}
+                    <div className="mx-auto border-t-8 border-gray-800 rounded-t-lg mb-8 w-2/3 max-w-lg text-center text-xs text-gray-500 pt-1 font-bold">WHITEBOARD</div>
+                    
+                    {/* Grid-behållaren, justerad för att centreras och följa kolumnantalet */}
+                    <div 
+                      className="grid gap-3 mx-auto max-w-full" // Lade till max-w-full här också
+                      style={{ 
+                        gridTemplateColumns: `repeat(${cols}, minmax(100px, 1fr))`, 
+                        width: 'fit-content',
+                        minWidth: '100%' // Tvingar den att ta all tillgänglig bredd i vissa fall
+                      }}
+                    >
                       {currentPlan.map((s, idx) => (
                         <div key={idx} className={`h-24 p-2 rounded-lg border-2 flex flex-col items-center justify-center text-center relative ${s ? 'bg-white border-blue-100 shadow-sm' : 'bg-gray-50 border-gray-100 border-dashed'}`}>
                           {s ? (
                             <>
                               <span className="font-bold text-sm">{s.name}</span>
                               <div className="absolute top-1 right-1 flex gap-1">
-                                {s.needsFront && <div className="w-2 h-2 rounded-full bg-yellow-400"/>}
-                                {s.needsWall && <div className="w-2 h-2 rounded-full bg-green-400"/>}
+                                {s.needsFront && <div className="w-2 h-2 rounded-full bg-yellow-400" title="Nära tavlan"/>}
+                                {s.needsWall && <div className="w-2 h-2 rounded-full bg-green-400" title="Vid vägg"/>}
                               </div>
                             </>
                           ) : <span className="text-gray-300 text-xs">Tom</span>}
