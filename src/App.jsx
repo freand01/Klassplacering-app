@@ -179,11 +179,13 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('students'); 
   
   // -- Data State --
+  // Added activePlans to store the current temporary state of each class
   const [data, setData] = useState({
     classes: [],
     students: [],
     constraints: [],
-    plans: []
+    plans: [],
+    activePlans: {} // Format: { [classId]: { layout: [], rows: 5, cols: 6 } }
   });
 
   const [currentClassId, setCurrentClassId] = useState('');
@@ -222,12 +224,34 @@ export default function App() {
   useEffect(() => {
     const localData = loadFromLocal();
     if (localData) {
-      setData(localData);
+      // Ensure activePlans exists even if loading old data structure
+      setData({ ...localData, activePlans: localData.activePlans || {} });
       if (localData.classes.length > 0) {
         setCurrentClassId(localData.classes[0].id);
       }
     }
   }, []);
+
+  // --- Sync Layout State when Class Changes ---
+  useEffect(() => {
+    if (!currentClassId) return;
+
+    // Check if we have an active plan stored for this class
+    const active = data.activePlans?.[currentClassId];
+    
+    if (active) {
+      // Restore previous state
+      setCurrentPlan(active.layout);
+      setRows(active.rows);
+      setCols(active.cols);
+      setGenerationMsg(""); // Clear message
+    } else {
+      // Reset if no active plan exists
+      setCurrentPlan([]);
+      // We keep rows/cols as is, or you could reset them to default (5,6)
+      setGenerationMsg("");
+    }
+  }, [currentClassId, data.activePlans]);
 
   // --- Save Effect ---
   useEffect(() => {
@@ -256,11 +280,16 @@ export default function App() {
 
   const deleteClass = (id) => {
     if(!confirm("Är du säker? Detta raderar klassen permanent.")) return;
+    
+    // Create new activePlans without the deleted class
+    const { [id]: deleted, ...remainingActivePlans } = data.activePlans || {};
+
     setData(prev => ({
       classes: prev.classes.filter(c => c.id !== id),
       students: prev.students.filter(s => s.classId !== id),
       constraints: prev.constraints.filter(c => c.classId !== id),
-      plans: prev.plans.filter(p => p.classId !== id)
+      plans: prev.plans.filter(p => p.classId !== id),
+      activePlans: remainingActivePlans
     }));
     if (currentClassId === id) setCurrentClassId('');
   };
@@ -390,9 +419,19 @@ export default function App() {
   };
 
   const loadPlan = (plan) => {
+    // When loading history, also set it as active for this class
     setRows(plan.rows);
     setCols(plan.cols);
     setCurrentPlan(plan.layout);
+    
+    setData(prev => ({
+        ...prev,
+        activePlans: {
+            ...prev.activePlans,
+            [plan.classId]: { layout: plan.layout, rows: plan.rows, cols: plan.cols }
+        }
+    }));
+    
     setActiveTab('layout');
   };
 
@@ -418,7 +457,8 @@ export default function App() {
         const imported = JSON.parse(e.target.result);
         if (imported.classes && imported.students) {
            if(confirm("Vill du öppna detta projekt? All osparad data i nuvarande session kommer ersättas.")) {
-             setData(imported);
+             // Ensure compatibility with older files
+             setData({ ...imported, activePlans: imported.activePlans || {} });
              if(imported.classes.length > 0) setCurrentClassId(imported.classes[0].id);
              console.log("Projekt öppnat!");
            }
@@ -533,6 +573,16 @@ export default function App() {
       }
 
       setCurrentPlan(bestGrid);
+      
+      // --- SAVE ACTIVE STATE ---
+      // Update global activePlans so it persists when switching classes
+      setData(prev => ({
+        ...prev,
+        activePlans: {
+            ...prev.activePlans,
+            [currentClassId]: { layout: bestGrid, rows: rows, cols: cols }
+        }
+      }));
       
       const hardConflicts = countHardConflicts(bestGrid, constraints);
       const softConflicts = countSoftConflicts(bestGrid, pastPairs);
