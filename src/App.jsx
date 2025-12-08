@@ -20,7 +20,8 @@ import {
   ListPlus,
   Edit2,
   FileJson,
-  FolderOpen
+  FolderOpen,
+  ClipboardList
 } from 'lucide-react';
 
 // --- LocalStorage Helper (Kvar som "Autosave"/Session) ---
@@ -77,7 +78,8 @@ const Input = ({ value, onChange, placeholder, className = '', autoFocus = false
   />
 );
 
-// --- EDIT MODAL COMPONENT ---
+// --- MODALS ---
+
 const EditStudentModal = ({ student, onClose, onSave }) => {
   const [name, setName] = useState(student.name);
   const [front, setFront] = useState(student.needsFront);
@@ -123,6 +125,43 @@ const EditStudentModal = ({ student, onClose, onSave }) => {
   );
 };
 
+const PasteImportModal = ({ onClose, onImport }) => {
+  const [text, setText] = useState('');
+
+  const handleImport = () => {
+    // Split by new line, remove empty lines
+    const names = text.split(/\r?\n/).map(n => n.trim()).filter(n => n !== '');
+    if (names.length > 0) {
+      onImport(names);
+      onClose();
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
+        <h3 className="text-lg font-bold mb-2 flex items-center gap-2">
+          <ClipboardList size={20} className="text-blue-600"/> Klistra in namn
+        </h3>
+        <p className="text-sm text-gray-500 mb-4">Klistra in din namnlista här. Ett namn per rad.</p>
+        
+        <textarea 
+          className="w-full h-48 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none mb-4 font-mono text-sm"
+          placeholder={"Anna Andersson\nBertil Svensson\nCecilia..."}
+          value={text}
+          onChange={e => setText(e.target.value)}
+          autoFocus
+        />
+
+        <div className="flex gap-3 justify-end">
+          <Button variant="secondary" onClick={onClose}>Avbryt</Button>
+          <Button onClick={handleImport} disabled={!text.trim()}>Importera {text.split(/\r?\n/).filter(n => n.trim()).length > 0 ? `(${text.split(/\r?\n/).filter(n => n.trim()).length})` : ''}</Button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // --- Main App Component ---
 
 export default function App() {
@@ -138,8 +177,9 @@ export default function App() {
 
   const [currentClassId, setCurrentClassId] = useState('');
   
-  // States for Edit Mode
+  // States for Modals
   const [editingStudent, setEditingStudent] = useState(null);
+  const [showPasteModal, setShowPasteModal] = useState(false);
 
   // Form Inputs - Single Add
   const [newClassName, setNewClassName] = useState('');
@@ -246,7 +286,7 @@ export default function App() {
     }));
   };
 
-  // --- Bulk Actions ---
+  // --- Bulk & Paste Actions ---
   const handleBulkChange = (id, field, value) => {
     setBulkList(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item));
   };
@@ -280,6 +320,19 @@ export default function App() {
         setBulkList([{ id: crypto.randomUUID(), name: '', front: false, wall: false }]); 
         setIsBulkMode(false); 
     }
+  };
+
+  const handlePasteImport = (namesList) => {
+    const newStudents = namesList.map(name => ({
+        id: crypto.randomUUID(),
+        classId: currentClassId,
+        name: name,
+        needsFront: false,
+        needsWall: false,
+        createdAt: Date.now()
+    }));
+    
+    setData(prev => ({ ...prev, students: [...prev.students, ...newStudents] }));
   };
 
   // --- Constraint Actions ---
@@ -603,6 +656,14 @@ export default function App() {
         />
       )}
 
+      {/* PASTE MODAL */}
+      {showPasteModal && (
+        <PasteImportModal 
+          onClose={() => setShowPasteModal(false)}
+          onImport={handlePasteImport}
+        />
+      )}
+
       <header className="bg-white sticky top-0 z-10 shadow-sm">
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between border-b border-gray-100">
           <div className="flex items-center gap-2">
@@ -672,6 +733,13 @@ export default function App() {
                             <ListPlus size={16} /> Lägg till flera...
                           </button>
                           <div className="h-4 w-[1px] bg-gray-300"></div>
+                          
+                          {/* NY KNAPP: KLISTRA IN FRÅN URKLIPP */}
+                          <button onClick={() => setShowPasteModal(true)} className="text-sm text-blue-600 font-medium flex items-center gap-1 hover:underline">
+                            <ClipboardList size={16} /> Klistra in lista
+                          </button>
+                          
+                          <div className="h-4 w-[1px] bg-gray-300"></div>
                           <button onClick={() => deleteClass(currentClassId)} className="text-xs text-red-400 underline hover:text-red-600">Ta bort klass</button>
                        </div>
                     </div>
@@ -720,7 +788,9 @@ export default function App() {
                      </div>
                      
                      <div className="flex justify-between items-center border-t pt-4">
-                        <Button variant="ghost" onClick={addBulkRow}><Plus size={16}/> Lägg till rad</Button>
+                        <div className="flex gap-2">
+                           <Button variant="ghost" onClick={addBulkRow}><Plus size={16}/> Lägg till rad</Button>
+                        </div>
                         <div className="flex gap-2">
                            <Button variant="secondary" onClick={() => setIsBulkMode(false)}>Avbryt</Button>
                            <Button onClick={saveBulkList}>Spara alla elever</Button>
