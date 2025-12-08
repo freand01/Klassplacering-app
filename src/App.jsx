@@ -15,12 +15,12 @@ import {
   Plus,
   Download,
   Upload,
-  AlertCircle
+  AlertCircle,
+  X,
+  ListPlus
 } from 'lucide-react';
 
 // --- LocalStorage Helper ---
-// Funktionen confirm() används i koden, men är inte idealisk i moderna appar (eller om appen körs i en iframe).
-// Vi behåller den nu, men en anpassad modal skulle vara bättre.
 const STORAGE_KEY = 'classroom_seating_data_v1';
 
 const saveToLocal = (data) => {
@@ -28,7 +28,6 @@ const saveToLocal = (data) => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch (e) {
     console.error("Kunde inte spara lokalt", e);
-    // Ersatte alert() med console.error för att undvika fönsterprompter
     console.error("Varning: Minnet är fullt eller avstängt. Datan kunde inte sparas.");
   }
 };
@@ -51,7 +50,8 @@ const Button = ({ onClick, children, variant = 'primary', className = '', disabl
     primary: "bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-300",
     secondary: "bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:bg-gray-50",
     danger: "bg-red-100 text-red-600 hover:bg-red-200",
-    outline: "border border-gray-300 text-gray-700 hover:bg-gray-50"
+    outline: "border border-gray-300 text-gray-700 hover:bg-gray-50",
+    ghost: "bg-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-700"
   };
   return (
     <button 
@@ -65,12 +65,13 @@ const Button = ({ onClick, children, variant = 'primary', className = '', disabl
   );
 };
 
-const Input = ({ value, onChange, placeholder, className = '' }) => (
+const Input = ({ value, onChange, placeholder, className = '', autoFocus = false }) => (
   <input
     type="text"
     value={value}
     onChange={onChange}
     placeholder={placeholder}
+    autoFocus={autoFocus}
     className={`w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none ${className}`}
   />
 );
@@ -90,10 +91,19 @@ export default function App() {
 
   const [currentClassId, setCurrentClassId] = useState('');
   
-  // Form Inputs
+  // Form Inputs - Single Add
   const [newClassName, setNewClassName] = useState('');
   const [newStudentName, setNewStudentName] = useState('');
   const [studentAttr, setStudentAttr] = useState({ front: false, wall: false });
+  
+  // Form Inputs - Bulk Add
+  const [isBulkMode, setIsBulkMode] = useState(false);
+  const [bulkList, setBulkList] = useState([
+    { id: '1', name: '', front: false, wall: false },
+    { id: '2', name: '', front: false, wall: false },
+    { id: '3', name: '', front: false, wall: false }
+  ]);
+
   const [constraintStudent1, setConstraintStudent1] = useState('');
   const [constraintStudent2, setConstraintStudent2] = useState('');
 
@@ -120,7 +130,6 @@ export default function App() {
 
   // --- Save Effect ---
   useEffect(() => {
-    // Only save if we have initialized (classes exist or array is empty but initialized)
     if (data) {
       saveToLocal(data);
     }
@@ -129,7 +138,6 @@ export default function App() {
   // --- Helpers for Filtering ---
   const getStudents = () => data.students.filter(s => s.classId === currentClassId).sort((a,b) => a.name.localeCompare(b.name));
   const getConstraints = () => {
-    // Return constraints where both students belong to current class (integrity check)
     const classStudentIds = new Set(getStudents().map(s => s.id));
     return data.constraints.filter(c => classStudentIds.has(c.student1) && classStudentIds.has(c.student2));
   };
@@ -146,12 +154,11 @@ export default function App() {
   };
 
   const deleteClass = (id) => {
-    // Bytte ut confirm() mot console.log för att följa reglerna.
-    console.log("Klassen raderas. (Normalt visas en bekräftelseruta här.)");
+    console.log("Klassen raderas.");
     setData(prev => ({
       classes: prev.classes.filter(c => c.id !== id),
       students: prev.students.filter(s => s.classId !== id),
-      constraints: prev.constraints.filter(c => c.classId !== id), // Optional: clean up constraints
+      constraints: prev.constraints.filter(c => c.classId !== id),
       plans: prev.plans.filter(p => p.classId !== id)
     }));
     if (currentClassId === id) setCurrentClassId('');
@@ -172,11 +179,47 @@ export default function App() {
     setStudentAttr({ front: false, wall: false });
   };
 
+  // --- Bulk Actions ---
+  const handleBulkChange = (id, field, value) => {
+    setBulkList(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item));
+  };
+
+  const addBulkRow = () => {
+    setBulkList(prev => [...prev, { id: crypto.randomUUID(), name: '', front: false, wall: false }]);
+  };
+
+  const removeBulkRow = (id) => {
+    if(bulkList.length <= 1) {
+        setBulkList([{ id: crypto.randomUUID(), name: '', front: false, wall: false }]); // Reset if last one
+        return;
+    }
+    setBulkList(prev => prev.filter(item => item.id !== id));
+  };
+
+  const saveBulkList = () => {
+    const validStudents = bulkList
+        .filter(s => s.name.trim() !== '')
+        .map(s => ({
+            id: crypto.randomUUID(),
+            classId: currentClassId,
+            name: s.name.trim(),
+            needsFront: s.front,
+            needsWall: s.wall,
+            createdAt: Date.now()
+        }));
+
+    if (validStudents.length > 0) {
+        setData(prev => ({ ...prev, students: [...prev.students, ...validStudents] }));
+        setBulkList([{ id: crypto.randomUUID(), name: '', front: false, wall: false }]); // Reset
+        setIsBulkMode(false); // Close modal/mode
+    }
+  };
+
   const removeStudent = (id) => {
     setData(prev => ({
       ...prev,
       students: prev.students.filter(s => s.id !== id),
-      constraints: prev.constraints.filter(c => c.student1 !== id && c.student2 !== id) // Cleanup constraints
+      constraints: prev.constraints.filter(c => c.student1 !== id && c.student2 !== id)
     }));
   };
 
@@ -247,12 +290,9 @@ export default function App() {
       try {
         const imported = JSON.parse(e.target.result);
         if (imported.classes && imported.students) {
-           // Bytte ut confirm() mot console.log för att följa reglerna.
-           console.log("Data importeras, nuvarande data skrivs över. (Normalt visas en bekräftelseruta här.)");
+           console.log("Data importerad!");
            setData(imported);
            if(imported.classes.length > 0) setCurrentClassId(imported.classes[0].id);
-           // Bytte ut alert() mot console.log för att följa reglerna.
-           console.log("Data importerad!");
         } else {
           console.error("Felaktigt filformat.");
         }
@@ -263,7 +303,7 @@ export default function App() {
     reader.readAsText(file);
   };
 
-  // --- ALGORITHM (Identical logic, just using local state) ---
+  // --- ALGORITHM ---
 
   const generateSeating = () => {
     const students = getStudents();
@@ -285,7 +325,6 @@ export default function App() {
         const layout = plan.layout;
         for (let i = 0; i < layout.length; i++) {
           if (!layout[i]) continue;
-          // Kontrollera bara horisontella grannar
           if ((i % pCols) !== (pCols - 1)) {
             const neighbor = layout[i + 1];
             if (neighbor) registerPair(pastPairs, layout[i].id, neighbor.id);
@@ -294,7 +333,6 @@ export default function App() {
       });
 
       // 2. Setup
-      // Se till att storleken på grid är korrekt baserat på aktuella rader/kolumner
       const requiredSeats = rows * cols;
       let grid = Array(requiredSeats).fill(null);
       let pool = [...students].sort(() => Math.random() - 0.5);
@@ -303,14 +341,12 @@ export default function App() {
       const frontRowIndices = Array.from({length: cols}, (_, i) => i);
       const wallIndices = [];
       for(let r=0; r<rows; r++) {
-        wallIndices.push(r * cols); // Vänster vägg
+        wallIndices.push(r * cols); 
         if (cols > 1) {
-            wallIndices.push(r * cols + cols - 1); // Höger vägg (undantag för cols=1, men det hanteras av cols > 1)
+            wallIndices.push(r * cols + cols - 1); 
         }
       }
       
-      // ... (resten av algoritmen förblir oförändrad) ...
-
       const placeGroup = (filterFn, allowedIndices) => {
         const group = pool.filter(filterFn);
         pool = pool.filter(s => !filterFn(s));
@@ -331,27 +367,23 @@ export default function App() {
       // 4. Fill
       for (let i = 0; i < grid.length; i++) {
         if (grid[i] === null && pool.length > 0) {
-          // Kontrollera om studenten är valid på positionen innan den placeras
-          const studentToPlace = pool[pool.length - 1]; // Tar den sista studenten för att förenkla pop
+          const studentToPlace = pool[pool.length - 1]; 
           if(isValidPos(studentToPlace, i)) {
             grid[i] = pool.pop();
           }
         }
       }
       
-      // 5. Optimize (Simulated Annealing)
+      // 5. Optimize
       let bestGrid = [...grid];
       let bestScore = calculateScore(bestGrid, pastPairs, constraints);
 
-      // Vi sänker antalet iterationer för snabbare prestanda i en enkel app
       for (let i = 0; i < 1500; i++) { 
-        // Välj två slumpmässiga index
         const idx1 = Math.floor(Math.random() * grid.length);
         const idx2 = Math.floor(Math.random() * grid.length);
         const s1 = grid[idx1];
         const s2 = grid[idx2];
         
-        // Kontrollera om bytet är giltigt (Hard Constraints)
         const s1ValidAt2 = isValidPos(s1, idx2);
         const s2ValidAt1 = isValidPos(s2, idx1);
 
@@ -361,7 +393,6 @@ export default function App() {
           tempGrid[idx2] = s1;
           const score = calculateScore(tempGrid, pastPairs, constraints);
           
-          // Använd score OCH en liten chans att acceptera en sämre score (simulated annealing)
           if (score < bestScore || (score === bestScore && Math.random() < 0.05)) {
             grid = tempGrid;
             bestScore = score;
@@ -370,7 +401,6 @@ export default function App() {
         }
       }
 
-      // 6. Output
       setCurrentPlan(bestGrid);
       
       const hardConflicts = countHardConflicts(bestGrid, constraints);
@@ -396,28 +426,21 @@ export default function App() {
     if (!student) return true;
     const r = Math.floor(index / cols);
     const c = index % cols;
-    
-    // Nära tavlan (första raden, r=0)
     if (student.needsFront && r !== 0) return false;
-    
-    // Vid vägg (första eller sista kolumnen, c=0 eller c=cols-1)
     if (student.needsWall && c !== 0 && c !== cols - 1) return false;
-    
     return true;
   };
 
   const calculateScore = (gridToCheck, pastPairs, constraints) => {
     let score = 0;
-    // Hard Constraints
     constraints.forEach(c => {
       const idx1 = gridToCheck.findIndex(s => s?.id === c.student1);
       const idx2 = gridToCheck.findIndex(s => s?.id === c.student2);
       if (idx1 !== -1 && idx2 !== -1 && areNeighbors(idx1, idx2)) score += 1000; 
     });
-    // Soft Constraints (Horizontal neighbors only)
     for (let i = 0; i < gridToCheck.length; i++) {
       if (!gridToCheck[i]) continue;
-      if ((i % cols) !== (cols - 1)) { // Kontrollera att det inte är sista kolumnen
+      if ((i % cols) !== (cols - 1)) {
         const neighbor = gridToCheck[i+1];
         if (neighbor) {
           const key = [gridToCheck[i].id, neighbor.id].sort().join('-');
@@ -433,8 +456,6 @@ export default function App() {
     const c1 = idx1 % cols;
     const r2 = Math.floor(idx2 / cols);
     const c2 = idx2 % cols;
-    
-    // Kontrollerar om rutorna är intilliggande (upp/ner/vänster/höger)
     return (Math.abs(r1 - r2) + Math.abs(c1 - c2)) === 1;
   };
 
@@ -462,7 +483,6 @@ export default function App() {
     }
     return count;
   };
-
 
   // --- Renderers ---
 
@@ -563,22 +583,75 @@ export default function App() {
               </div>
             ) : (
               <>
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                  <div className="flex justify-between items-center mb-4">
-                     <h3 className="font-semibold flex gap-2"><Users size={20} className="text-blue-600"/> Lägg till elev</h3>
-                     <button onClick={() => deleteClass(currentClassId)} className="text-xs text-red-400 underline">Ta bort klass</button>
-                  </div>
-                  <div className="flex flex-col md:flex-row gap-4 items-end">
-                    <div className="flex-grow">
-                      <Input value={newStudentName} onChange={e => setNewStudentName(e.target.value)} placeholder="Namn..." />
+                {/* --- ADD STUDENT AREA --- */}
+                {!isBulkMode ? (
+                  // SINGLE ADD MODE
+                  <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                    <div className="flex justify-between items-center mb-4">
+                       <h3 className="font-semibold flex gap-2"><Users size={20} className="text-blue-600"/> Lägg till elev</h3>
+                       <div className="flex gap-4 items-center">
+                          <button onClick={() => setIsBulkMode(true)} className="text-sm text-blue-600 font-medium flex items-center gap-1 hover:underline">
+                            <ListPlus size={16} /> Lägg till flera...
+                          </button>
+                          <div className="h-4 w-[1px] bg-gray-300"></div>
+                          <button onClick={() => deleteClass(currentClassId)} className="text-xs text-red-400 underline hover:text-red-600">Ta bort klass</button>
+                       </div>
                     </div>
-                    <div className="flex gap-4 mb-2 text-sm text-gray-700">
-                      <label className="flex gap-2 cursor-pointer"><input type="checkbox" checked={studentAttr.front} onChange={e => setStudentAttr({...studentAttr, front: e.target.checked})}/> Nära tavlan</label>
-                      <label className="flex gap-2 cursor-pointer"><input type="checkbox" checked={studentAttr.wall} onChange={e => setStudentAttr({...studentAttr, wall: e.target.checked})}/> Vid vägg</label>
+                    <div className="flex flex-col md:flex-row gap-4 items-end">
+                      <div className="flex-grow">
+                        <Input value={newStudentName} onChange={e => setNewStudentName(e.target.value)} placeholder="Namn..." />
+                      </div>
+                      <div className="flex gap-4 mb-2 text-sm text-gray-700">
+                        <label className="flex gap-2 cursor-pointer items-center select-none"><input type="checkbox" checked={studentAttr.front} onChange={e => setStudentAttr({...studentAttr, front: e.target.checked})}/> Nära tavlan</label>
+                        <label className="flex gap-2 cursor-pointer items-center select-none"><input type="checkbox" checked={studentAttr.wall} onChange={e => setStudentAttr({...studentAttr, wall: e.target.checked})}/> Vid vägg</label>
+                      </div>
+                      <Button onClick={addStudent}>Lägg till</Button>
                     </div>
-                    <Button onClick={addStudent}>Lägg till</Button>
                   </div>
-                </div>
+                ) : (
+                  // BULK ADD MODE
+                  <div className="bg-white p-6 rounded-xl shadow-lg border border-blue-100 relative">
+                     <button onClick={() => setIsBulkMode(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><X size={20} /></button>
+                     <h3 className="font-semibold flex gap-2 mb-4 text-lg"><ListPlus size={24} className="text-blue-600"/> Lägg till flera elever</h3>
+                     
+                     <div className="space-y-3 mb-6">
+                       {/* Header row */}
+                       <div className="flex gap-2 text-xs font-bold text-gray-500 uppercase tracking-wider px-1">
+                         <div className="flex-grow">Namn</div>
+                         <div className="w-20 text-center">Tavla</div>
+                         <div className="w-20 text-center">Vägg</div>
+                         <div className="w-8"></div>
+                       </div>
+                       
+                       {/* Input rows */}
+                       {bulkList.map((item, idx) => (
+                         <div key={item.id} className="flex gap-2 items-center">
+                           <div className="flex-grow">
+                             <Input 
+                                value={item.name} 
+                                onChange={e => handleBulkChange(item.id, 'name', e.target.value)} 
+                                placeholder={`Elev ${idx + 1}`}
+                                autoFocus={idx === 0}
+                             />
+                           </div>
+                           <label className="w-20 flex justify-center cursor-pointer"><input type="checkbox" checked={item.front} onChange={e => handleBulkChange(item.id, 'front', e.target.checked)} className="w-5 h-5" /></label>
+                           <label className="w-20 flex justify-center cursor-pointer"><input type="checkbox" checked={item.wall} onChange={e => handleBulkChange(item.id, 'wall', e.target.checked)} className="w-5 h-5" /></label>
+                           <button onClick={() => removeBulkRow(item.id)} className="w-8 text-gray-300 hover:text-red-500 flex justify-center"><Trash2 size={18}/></button>
+                         </div>
+                       ))}
+                     </div>
+                     
+                     <div className="flex justify-between items-center border-t pt-4">
+                        <Button variant="ghost" onClick={addBulkRow}><Plus size={16}/> Lägg till rad</Button>
+                        <div className="flex gap-2">
+                           <Button variant="secondary" onClick={() => setIsBulkMode(false)}>Avbryt</Button>
+                           <Button onClick={saveBulkList}>Spara alla elever</Button>
+                        </div>
+                     </div>
+                  </div>
+                )}
+
+                {/* --- STUDENT LIST --- */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                   {getStudents().map(s => (
                     <div key={s.id} className="bg-white p-3 rounded-lg border flex justify-between items-center">
@@ -653,17 +726,14 @@ export default function App() {
                 {generationMsg && <div className={`text-sm text-center px-4 py-2 rounded-lg ${generationMsg.includes("Klar") ? 'bg-green-100 text-green-800' : 'bg-blue-50'}`}>{generationMsg}</div>}
                 
                 {currentPlan.length > 0 && (
-                  // Huvudbehållare för placeringen
-                  <div className="overflow-x-auto pb-4 max-w-full"> {/* Lade till max-w-full */}
+                  <div className="overflow-x-auto pb-4 max-w-full">
                     <div className="mx-auto border-t-8 border-gray-800 rounded-t-lg mb-8 w-2/3 max-w-lg text-center text-xs text-gray-500 pt-1 font-bold">WHITEBOARD</div>
-                    
-                    {/* Grid-behållaren, justerad för att centreras och följa kolumnantalet */}
                     <div 
-                      className="grid gap-3 mx-auto max-w-full" // Lade till max-w-full här också
+                      className="grid gap-3 mx-auto max-w-full"
                       style={{ 
                         gridTemplateColumns: `repeat(${cols}, minmax(100px, 1fr))`, 
                         width: 'fit-content',
-                        minWidth: '100%' // Tvingar den att ta all tillgänglig bredd i vissa fall
+                        minWidth: '100%'
                       }}
                     >
                       {currentPlan.map((s, idx) => (
