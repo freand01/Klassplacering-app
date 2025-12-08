@@ -17,10 +17,13 @@ import {
   Upload,
   AlertCircle,
   X,
-  ListPlus
+  ListPlus,
+  Edit2,
+  FileJson,
+  FolderOpen
 } from 'lucide-react';
 
-// --- LocalStorage Helper ---
+// --- LocalStorage Helper (Kvar som "Autosave"/Session) ---
 const STORAGE_KEY = 'classroom_seating_data_v1';
 
 const saveToLocal = (data) => {
@@ -28,7 +31,6 @@ const saveToLocal = (data) => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch (e) {
     console.error("Kunde inte spara lokalt", e);
-    console.error("Varning: Minnet är fullt eller avstängt. Datan kunde inte sparas.");
   }
 };
 
@@ -37,7 +39,6 @@ const loadFromLocal = () => {
     const data = localStorage.getItem(STORAGE_KEY);
     return data ? JSON.parse(data) : null;
   } catch (e) {
-    console.error("Kunde inte ladda data", e);
     return null;
   }
 };
@@ -76,12 +77,58 @@ const Input = ({ value, onChange, placeholder, className = '', autoFocus = false
   />
 );
 
+// --- EDIT MODAL COMPONENT ---
+const EditStudentModal = ({ student, onClose, onSave }) => {
+  const [name, setName] = useState(student.name);
+  const [front, setFront] = useState(student.needsFront);
+  const [wall, setWall] = useState(student.needsWall);
+
+  const handleSave = () => {
+    onSave(student.id, { name, needsFront: front, needsWall: wall });
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm">
+        <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+          <Edit2 size={20} className="text-blue-600"/> Redigera Elev
+        </h3>
+        
+        <div className="space-y-4">
+          <div>
+            <label className="text-sm font-medium text-gray-700 mb-1 block">Namn</label>
+            <Input value={name} onChange={e => setName(e.target.value)} />
+          </div>
+          
+          <div className="space-y-2">
+            <label className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
+              <input type="checkbox" checked={front} onChange={e => setFront(e.target.checked)} className="w-5 h-5 text-blue-600"/>
+              <span className="font-medium text-gray-700">Måste sitta nära tavlan</span>
+            </label>
+            
+            <label className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
+              <input type="checkbox" checked={wall} onChange={e => setWall(e.target.checked)} className="w-5 h-5 text-blue-600"/>
+              <span className="font-medium text-gray-700">Måste sitta vid vägg</span>
+            </label>
+          </div>
+        </div>
+
+        <div className="flex gap-3 mt-6 justify-end">
+          <Button variant="secondary" onClick={onClose}>Avbryt</Button>
+          <Button onClick={handleSave}>Spara ändringar</Button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // --- Main App Component ---
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('students'); 
   
-  // -- Data State (All data lives here) --
+  // -- Data State --
   const [data, setData] = useState({
     classes: [],
     students: [],
@@ -91,6 +138,9 @@ export default function App() {
 
   const [currentClassId, setCurrentClassId] = useState('');
   
+  // States for Edit Mode
+  const [editingStudent, setEditingStudent] = useState(null);
+
   // Form Inputs - Single Add
   const [newClassName, setNewClassName] = useState('');
   const [newStudentName, setNewStudentName] = useState('');
@@ -154,7 +204,7 @@ export default function App() {
   };
 
   const deleteClass = (id) => {
-    console.log("Klassen raderas.");
+    if(!confirm("Är du säker? Detta raderar klassen permanent.")) return;
     setData(prev => ({
       classes: prev.classes.filter(c => c.id !== id),
       students: prev.students.filter(s => s.classId !== id),
@@ -163,6 +213,8 @@ export default function App() {
     }));
     if (currentClassId === id) setCurrentClassId('');
   };
+
+  // --- Student Actions ---
 
   const addStudent = () => {
     if (!newStudentName.trim() || !currentClassId) return;
@@ -179,6 +231,21 @@ export default function App() {
     setStudentAttr({ front: false, wall: false });
   };
 
+  const updateStudent = (id, updates) => {
+    setData(prev => ({
+      ...prev,
+      students: prev.students.map(s => s.id === id ? { ...s, ...updates } : s)
+    }));
+  };
+
+  const removeStudent = (id) => {
+    setData(prev => ({
+      ...prev,
+      students: prev.students.filter(s => s.id !== id),
+      constraints: prev.constraints.filter(c => c.student1 !== id && c.student2 !== id)
+    }));
+  };
+
   // --- Bulk Actions ---
   const handleBulkChange = (id, field, value) => {
     setBulkList(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item));
@@ -190,7 +257,7 @@ export default function App() {
 
   const removeBulkRow = (id) => {
     if(bulkList.length <= 1) {
-        setBulkList([{ id: crypto.randomUUID(), name: '', front: false, wall: false }]); // Reset if last one
+        setBulkList([{ id: crypto.randomUUID(), name: '', front: false, wall: false }]); 
         return;
     }
     setBulkList(prev => prev.filter(item => item.id !== id));
@@ -210,18 +277,12 @@ export default function App() {
 
     if (validStudents.length > 0) {
         setData(prev => ({ ...prev, students: [...prev.students, ...validStudents] }));
-        setBulkList([{ id: crypto.randomUUID(), name: '', front: false, wall: false }]); // Reset
-        setIsBulkMode(false); // Close modal/mode
+        setBulkList([{ id: crypto.randomUUID(), name: '', front: false, wall: false }]); 
+        setIsBulkMode(false); 
     }
   };
 
-  const removeStudent = (id) => {
-    setData(prev => ({
-      ...prev,
-      students: prev.students.filter(s => s.id !== id),
-      constraints: prev.constraints.filter(c => c.student1 !== id && c.student2 !== id)
-    }));
-  };
+  // --- Constraint Actions ---
 
   const addConstraint = () => {
     if (!constraintStudent1 || !constraintStudent2 || constraintStudent1 === constraintStudent2) return;
@@ -240,6 +301,8 @@ export default function App() {
   const removeConstraint = (id) => {
     setData(prev => ({ ...prev, constraints: prev.constraints.filter(c => c.id !== id) }));
   };
+
+  // --- Plan Actions ---
 
   const saveCurrentPlan = () => {
     if (currentPlan.length === 0 || !currentClassId) return;
@@ -269,14 +332,14 @@ export default function App() {
     setActiveTab('layout');
   };
 
-  // --- EXPORT / IMPORT ---
+  // --- FILE STORAGE (Import/Export) ---
   const exportData = () => {
     const dataStr = JSON.stringify(data, null, 2);
     const blob = new Blob([dataStr], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `klassplacering_backup_${new Date().toISOString().slice(0,10)}.json`;
+    link.download = `klassplacering_projekt_${new Date().toISOString().slice(0,10)}.json`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -290,15 +353,19 @@ export default function App() {
       try {
         const imported = JSON.parse(e.target.result);
         if (imported.classes && imported.students) {
-           console.log("Data importerad!");
-           setData(imported);
-           if(imported.classes.length > 0) setCurrentClassId(imported.classes[0].id);
+           if(confirm("Vill du öppna detta projekt? All osparad data i nuvarande session kommer ersättas.")) {
+             setData(imported);
+             if(imported.classes.length > 0) setCurrentClassId(imported.classes[0].id);
+             console.log("Projekt öppnat!");
+           }
         } else {
-          console.error("Felaktigt filformat.");
+          alert("Felaktigt filformat. Det måste vara en fil skapad av detta program.");
         }
       } catch (error) {
-        console.error("Kunde inte läsa filen.");
+        alert("Kunde inte läsa filen.");
       }
+      // Reset input value to allow re-importing same file if needed
+      event.target.value = '';
     };
     reader.readAsText(file);
   };
@@ -526,21 +593,32 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800 font-sans pb-10">
+      
+      {/* EDIT MODAL */}
+      {editingStudent && (
+        <EditStudentModal 
+          student={editingStudent} 
+          onClose={() => setEditingStudent(null)} 
+          onSave={updateStudent} 
+        />
+      )}
+
       <header className="bg-white sticky top-0 z-10 shadow-sm">
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between border-b border-gray-100">
           <div className="flex items-center gap-2">
             <LayoutGrid className="text-blue-600" />
-            <h1 className="text-xl font-bold tracking-tight">KlassPlacering <span className="text-xs font-normal text-gray-400 border border-gray-200 rounded px-1 ml-2">Offline/Lokal</span></h1>
+            <h1 className="text-xl font-bold tracking-tight">KlassPlacering</h1>
           </div>
           
           <div className="flex gap-2">
-            <Button variant="outline" className="text-xs px-2" onClick={exportData} title="Spara backup">
-              <Download size={14} /> Backup
+            {/* FILE ACTIONS - REBRANDED */}
+            <Button variant="outline" className="text-xs px-2" onClick={exportData} title="Spara ner all data till en fil på datorn">
+              <FileJson size={14} /> Spara Projekt
             </Button>
             <label className="cursor-pointer">
                <input type="file" onChange={importData} accept=".json" className="hidden" />
-               <div className="px-3 py-2 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 bg-gray-100 text-gray-700 hover:bg-gray-200 text-xs h-full">
-                 <Upload size={14} /> Återställ
+               <div className="px-3 py-2 border border-gray-300 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 bg-white text-gray-700 hover:bg-gray-50 text-xs h-full">
+                 <FolderOpen size={14} /> Öppna Projekt
                </div>
             </label>
           </div>
@@ -654,15 +732,28 @@ export default function App() {
                 {/* --- STUDENT LIST --- */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                   {getStudents().map(s => (
-                    <div key={s.id} className="bg-white p-3 rounded-lg border flex justify-between items-center">
+                    <div 
+                      key={s.id} 
+                      onClick={() => setEditingStudent(s)} // OPEN EDIT MODAL
+                      className="bg-white p-3 rounded-lg border flex justify-between items-center cursor-pointer hover:border-blue-300 hover:shadow-sm transition-all group"
+                    >
                       <div>
-                        <div className="font-medium">{s.name}</div>
+                        <div className="font-medium group-hover:text-blue-700 flex items-center gap-2">
+                          {s.name}
+                          <Edit2 size={12} className="opacity-0 group-hover:opacity-100 text-gray-400" />
+                        </div>
                         <div className="flex gap-1 mt-1">
                           {s.needsFront && <span className="text-[10px] bg-yellow-100 text-yellow-800 px-1 rounded">Tavla</span>}
                           {s.needsWall && <span className="text-[10px] bg-green-100 text-green-800 px-1 rounded">Vägg</span>}
                         </div>
                       </div>
-                      <button onClick={() => removeStudent(s.id)} className="text-gray-400 hover:text-red-500"><UserMinus size={18}/></button>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); removeStudent(s.id); }} 
+                        className="text-gray-400 hover:text-red-500 p-2"
+                        title="Ta bort elev"
+                      >
+                        <UserMinus size={18}/>
+                      </button>
                     </div>
                   ))}
                   {getStudents().length === 0 && <div className="col-span-full text-center text-gray-400 py-4">Inga elever än.</div>}
