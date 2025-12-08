@@ -21,7 +21,9 @@ import {
   Edit2,
   FileJson,
   FolderOpen,
-  ClipboardList
+  ClipboardList,
+  Printer,
+  Move
 } from 'lucide-react';
 
 // --- LocalStorage Helper (Kvar som "Autosave"/Session) ---
@@ -47,7 +49,7 @@ const loadFromLocal = () => {
 // --- Components ---
 
 const Button = ({ onClick, children, variant = 'primary', className = '', disabled = false, title = '' }) => {
-  const baseStyle = "px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center gap-2";
+  const baseStyle = "px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 print:hidden";
   const variants = {
     primary: "bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-300",
     secondary: "bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:bg-gray-50",
@@ -91,7 +93,7 @@ const EditStudentModal = ({ student, onClose, onSave }) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 print:hidden">
       <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm">
         <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
           <Edit2 size={20} className="text-blue-600"/> Redigera Elev
@@ -145,7 +147,7 @@ const PasteImportModal = ({ onClose, onImport }) => {
   const count = getParsedNames(text).length;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 print:hidden">
       <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
         <h3 className="text-lg font-bold mb-2 flex items-center gap-2">
           <ClipboardList size={20} className="text-blue-600"/> Klistra in namn
@@ -179,7 +181,6 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('students'); 
   
   // -- Data State --
-  // Added activePlans to store the current temporary state of each class
   const [data, setData] = useState({
     classes: [],
     students: [],
@@ -190,9 +191,10 @@ export default function App() {
 
   const [currentClassId, setCurrentClassId] = useState('');
   
-  // States for Modals
+  // States for Modals & Interactions
   const [editingStudent, setEditingStudent] = useState(null);
   const [showPasteModal, setShowPasteModal] = useState(false);
+  const [selectedSeatIndex, setSelectedSeatIndex] = useState(null); // För flytt/swap
 
   // Form Inputs - Single Add
   const [newClassName, setNewClassName] = useState('');
@@ -224,7 +226,6 @@ export default function App() {
   useEffect(() => {
     const localData = loadFromLocal();
     if (localData) {
-      // Ensure activePlans exists even if loading old data structure
       setData({ ...localData, activePlans: localData.activePlans || {} });
       if (localData.classes.length > 0) {
         setCurrentClassId(localData.classes[0].id);
@@ -235,20 +236,16 @@ export default function App() {
   // --- Sync Layout State when Class Changes ---
   useEffect(() => {
     if (!currentClassId) return;
+    setSelectedSeatIndex(null); // Reset selection on class change
 
-    // Check if we have an active plan stored for this class
     const active = data.activePlans?.[currentClassId];
-    
     if (active) {
-      // Restore previous state
       setCurrentPlan(active.layout);
       setRows(active.rows);
       setCols(active.cols);
-      setGenerationMsg(""); // Clear message
+      setGenerationMsg(""); 
     } else {
-      // Reset if no active plan exists
       setCurrentPlan([]);
-      // We keep rows/cols as is, or you could reset them to default (5,6)
       setGenerationMsg("");
     }
   }, [currentClassId, data.activePlans]);
@@ -280,10 +277,7 @@ export default function App() {
 
   const deleteClass = (id) => {
     if(!confirm("Är du säker? Detta raderar klassen permanent.")) return;
-    
-    // Create new activePlans without the deleted class
     const { [id]: deleted, ...remainingActivePlans } = data.activePlans || {};
-
     setData(prev => ({
       classes: prev.classes.filter(c => c.id !== id),
       students: prev.students.filter(s => s.classId !== id),
@@ -293,8 +287,6 @@ export default function App() {
     }));
     if (currentClassId === id) setCurrentClassId('');
   };
-
-  // --- Student Actions ---
 
   const addStudent = () => {
     if (!newStudentName.trim() || !currentClassId) return;
@@ -419,7 +411,6 @@ export default function App() {
   };
 
   const loadPlan = (plan) => {
-    // When loading history, also set it as active for this class
     setRows(plan.rows);
     setCols(plan.cols);
     setCurrentPlan(plan.layout);
@@ -435,7 +426,45 @@ export default function App() {
     setActiveTab('layout');
   };
 
-  // --- FILE STORAGE (Import/Export) ---
+  // --- SEAT SWAPPING (Drag-and-Drop alternative) ---
+  const handleSeatClick = (index) => {
+    // If no seat selected, select this one
+    if (selectedSeatIndex === null) {
+        setSelectedSeatIndex(index);
+        return;
+    }
+
+    // If clicking the same seat, deselect
+    if (selectedSeatIndex === index) {
+        setSelectedSeatIndex(null);
+        return;
+    }
+
+    // Perform Swap
+    const newLayout = [...currentPlan];
+    const temp = newLayout[selectedSeatIndex];
+    newLayout[selectedSeatIndex] = newLayout[index];
+    newLayout[index] = temp;
+
+    setCurrentPlan(newLayout);
+    setSelectedSeatIndex(null); // Clear selection
+
+    // Update active plan immediately
+    setData(prev => ({
+        ...prev,
+        activePlans: {
+            ...prev.activePlans,
+            [currentClassId]: { layout: newLayout, rows, cols }
+        }
+    }));
+  };
+
+  // --- PRINTING ---
+  const handlePrint = () => {
+    window.print();
+  };
+
+  // --- EXPORT/IMPORT ---
   const exportData = () => {
     const dataStr = JSON.stringify(data, null, 2);
     const blob = new Blob([dataStr], { type: "application/json" });
@@ -457,25 +486,21 @@ export default function App() {
         const imported = JSON.parse(e.target.result);
         if (imported.classes && imported.students) {
            if(confirm("Vill du öppna detta projekt? All osparad data i nuvarande session kommer ersättas.")) {
-             // Ensure compatibility with older files
              setData({ ...imported, activePlans: imported.activePlans || {} });
              if(imported.classes.length > 0) setCurrentClassId(imported.classes[0].id);
-             console.log("Projekt öppnat!");
            }
         } else {
-          alert("Felaktigt filformat. Det måste vara en fil skapad av detta program.");
+          alert("Felaktigt filformat.");
         }
       } catch (error) {
         alert("Kunde inte läsa filen.");
       }
-      // Reset input value to allow re-importing same file if needed
       event.target.value = '';
     };
     reader.readAsText(file);
   };
 
-  // --- ALGORITHM ---
-
+  // --- ALGORITHM (Compressed for brevity) ---
   const generateSeating = () => {
     const students = getStudents();
     const plans = getPlans();
@@ -489,7 +514,6 @@ export default function App() {
     setGenerationMsg("Analyserar...");
 
     setTimeout(() => {
-      // 1. Analyze History
       const pastPairs = new Map();
       plans.forEach(plan => {
         const pCols = plan.cols;
@@ -503,19 +527,15 @@ export default function App() {
         }
       });
 
-      // 2. Setup
       const requiredSeats = rows * cols;
       let grid = Array(requiredSeats).fill(null);
       let pool = [...students].sort(() => Math.random() - 0.5);
 
-      // 3. Priorities
       const frontRowIndices = Array.from({length: cols}, (_, i) => i);
       const wallIndices = [];
       for(let r=0; r<rows; r++) {
         wallIndices.push(r * cols); 
-        if (cols > 1) {
-            wallIndices.push(r * cols + cols - 1); 
-        }
+        if (cols > 1) wallIndices.push(r * cols + cols - 1); 
       }
       
       const placeGroup = (filterFn, allowedIndices) => {
@@ -535,7 +555,6 @@ export default function App() {
       placeGroup(s => s.needsFront, frontRowIndices);
       placeGroup(s => s.needsWall, wallIndices);
 
-      // 4. Fill
       for (let i = 0; i < grid.length; i++) {
         if (grid[i] === null && pool.length > 0) {
           const studentToPlace = pool[pool.length - 1]; 
@@ -545,7 +564,6 @@ export default function App() {
         }
       }
       
-      // 5. Optimize
       let bestGrid = [...grid];
       let bestScore = calculateScore(bestGrid, pastPairs, constraints);
 
@@ -554,7 +572,6 @@ export default function App() {
         const idx2 = Math.floor(Math.random() * grid.length);
         const s1 = grid[idx1];
         const s2 = grid[idx2];
-        
         const s1ValidAt2 = isValidPos(s1, idx2);
         const s2ValidAt1 = isValidPos(s2, idx1);
 
@@ -573,9 +590,6 @@ export default function App() {
       }
 
       setCurrentPlan(bestGrid);
-      
-      // --- SAVE ACTIVE STATE ---
-      // Update global activePlans so it persists when switching classes
       setData(prev => ({
         ...prev,
         activePlans: {
@@ -586,18 +600,15 @@ export default function App() {
       
       const hardConflicts = countHardConflicts(bestGrid, constraints);
       const softConflicts = countSoftConflicts(bestGrid, pastPairs);
-      
       let msg = "Klar!";
       if (hardConflicts > 0) msg += ` ${hardConflicts} regelbrott kvar.`;
       if (softConflicts > 0) msg += ` ${softConflicts} upprepade par.`;
       if (hardConflicts === 0 && softConflicts === 0) msg += " Inga konflikter!";
-      
       setGenerationMsg(msg);
       setIsGenerating(false);
     }, 100);
   };
 
-  // --- Algo Helpers ---
   const registerPair = (map, id1, id2) => {
     const key = [id1, id2].sort().join('-');
     map.set(key, (map.get(key) || 0) + 1);
@@ -665,10 +676,8 @@ export default function App() {
     return count;
   };
 
-  // --- Renderers ---
-
   const renderClassSelector = () => (
-    <div className="bg-white border-b border-gray-200 p-4">
+    <div className="bg-white border-b border-gray-200 p-4 print:hidden">
       <div className="max-w-5xl mx-auto flex flex-col md:flex-row gap-4 items-center justify-between">
         <div className="flex items-center gap-3 w-full md:w-auto overflow-x-auto">
           <span className="text-sm font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
@@ -706,9 +715,9 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-800 font-sans pb-10">
+    <div className="min-h-screen bg-gray-50 text-gray-800 font-sans pb-10 print:bg-white print:pb-0">
       
-      {/* EDIT MODAL */}
+      {/* MODALS (Alltid dolda vid print) */}
       {editingStudent && (
         <EditStudentModal 
           student={editingStudent} 
@@ -716,8 +725,6 @@ export default function App() {
           onSave={updateStudent} 
         />
       )}
-
-      {/* PASTE MODAL */}
       {showPasteModal && (
         <PasteImportModal 
           onClose={() => setShowPasteModal(false)}
@@ -725,15 +732,14 @@ export default function App() {
         />
       )}
 
-      <header className="bg-white sticky top-0 z-10 shadow-sm">
+      {/* HEADER (Dold vid print) */}
+      <header className="bg-white sticky top-0 z-10 shadow-sm print:hidden">
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between border-b border-gray-100">
           <div className="flex items-center gap-2">
             <LayoutGrid className="text-blue-600" />
             <h1 className="text-xl font-bold tracking-tight">KlassPlacering</h1>
           </div>
-          
           <div className="flex gap-2">
-            {/* FILE ACTIONS - REBRANDED */}
             <Button variant="outline" className="text-xs px-2" onClick={exportData} title="Spara ner all data till en fil på datorn">
               <FileJson size={14} /> Spara Projekt
             </Button>
@@ -772,10 +778,17 @@ export default function App() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 py-6">
+      {/* PRINT HEADER (Endast synlig vid print) */}
+      <div className="hidden print:block text-center py-4 mb-4 border-b">
+        <h1 className="text-2xl font-bold">{data.classes.find(c => c.id === currentClassId)?.name}</h1>
+        <p className="text-sm text-gray-500">Placering genererad {new Date().toLocaleDateString('sv-SE')}</p>
+      </div>
+
+      <main className="max-w-5xl mx-auto px-4 py-6 print:p-0 print:w-full print:max-w-none">
+        
         {/* --- STUDENTS TAB --- */}
         {activeTab === 'students' && (
-          <div className="space-y-6">
+          <div className="space-y-6 print:hidden">
             {!currentClassId ? (
                <div className="text-center py-12 bg-white rounded-xl border border-dashed border-gray-300">
                 <GraduationCap size={48} className="mx-auto text-gray-300 mb-4" />
@@ -783,9 +796,7 @@ export default function App() {
               </div>
             ) : (
               <>
-                {/* --- ADD STUDENT AREA --- */}
                 {!isBulkMode ? (
-                  // SINGLE ADD MODE
                   <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
                     <div className="flex justify-between items-center mb-4">
                        <h3 className="font-semibold flex gap-2"><Users size={20} className="text-blue-600"/> Lägg till elev</h3>
@@ -794,12 +805,9 @@ export default function App() {
                             <ListPlus size={16} /> Lägg till flera...
                           </button>
                           <div className="h-4 w-[1px] bg-gray-300"></div>
-                          
-                          {/* NY KNAPP: KLISTRA IN FRÅN URKLIPP */}
                           <button onClick={() => setShowPasteModal(true)} className="text-sm text-blue-600 font-medium flex items-center gap-1 hover:underline">
                             <ClipboardList size={16} /> Klistra in lista
                           </button>
-                          
                           <div className="h-4 w-[1px] bg-gray-300"></div>
                           <button onClick={() => deleteClass(currentClassId)} className="text-xs text-red-400 underline hover:text-red-600">Ta bort klass</button>
                        </div>
@@ -816,21 +824,16 @@ export default function App() {
                     </div>
                   </div>
                 ) : (
-                  // BULK ADD MODE
                   <div className="bg-white p-6 rounded-xl shadow-lg border border-blue-100 relative">
                      <button onClick={() => setIsBulkMode(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><X size={20} /></button>
                      <h3 className="font-semibold flex gap-2 mb-4 text-lg"><ListPlus size={24} className="text-blue-600"/> Lägg till flera elever</h3>
-                     
                      <div className="space-y-3 mb-6">
-                       {/* Header row */}
                        <div className="flex gap-2 text-xs font-bold text-gray-500 uppercase tracking-wider px-1">
                          <div className="flex-grow">Namn</div>
                          <div className="w-20 text-center">Tavla</div>
                          <div className="w-20 text-center">Vägg</div>
                          <div className="w-8"></div>
                        </div>
-                       
-                       {/* Input rows */}
                        {bulkList.map((item, idx) => (
                          <div key={item.id} className="flex gap-2 items-center">
                            <div className="flex-grow">
@@ -847,7 +850,6 @@ export default function App() {
                          </div>
                        ))}
                      </div>
-                     
                      <div className="flex justify-between items-center border-t pt-4">
                         <div className="flex gap-2">
                            <Button variant="ghost" onClick={addBulkRow}><Plus size={16}/> Lägg till rad</Button>
@@ -860,12 +862,11 @@ export default function App() {
                   </div>
                 )}
 
-                {/* --- STUDENT LIST --- */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                   {getStudents().map(s => (
                     <div 
                       key={s.id} 
-                      onClick={() => setEditingStudent(s)} // OPEN EDIT MODAL
+                      onClick={() => setEditingStudent(s)} 
                       className="bg-white p-3 rounded-lg border flex justify-between items-center cursor-pointer hover:border-blue-300 hover:shadow-sm transition-all group"
                     >
                       <div>
@@ -896,7 +897,7 @@ export default function App() {
 
         {/* --- CONSTRAINTS TAB --- */}
         {activeTab === 'constraints' && (
-          <div className="space-y-6">
+          <div className="space-y-6 print:hidden">
              {!currentClassId ? <div className="text-center py-10 text-gray-500">Välj en klass först.</div> : (
                <>
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
@@ -933,22 +934,33 @@ export default function App() {
           </div>
         )}
 
-        {/* --- LAYOUT TAB --- */}
+        {/* --- LAYOUT TAB (MAIN VIEW) --- */}
         {activeTab === 'layout' && (
           <div className="space-y-6">
             {!currentClassId ? <div className="text-center py-10 text-gray-500">Välj en klass först.</div> : (
               <>
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-wrap gap-4 items-center justify-between">
+                {/* CONTROLS (Döljs vid print) */}
+                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-wrap gap-4 items-center justify-between print:hidden">
                   <div className="flex gap-4">
                     <div><label className="text-xs font-bold text-gray-500">Rader</label><input type="number" value={rows} onChange={e => setRows(parseInt(e.target.value)||1)} className="w-16 p-2 border rounded text-center"/></div>
                     <div><label className="text-xs font-bold text-gray-500">Kolumner</label><input type="number" value={cols} onChange={e => setCols(parseInt(e.target.value)||1)} className="w-16 p-2 border rounded text-center"/></div>
                   </div>
-                  <Button onClick={generateSeating} disabled={isGenerating}>{isGenerating ? '...' : 'Generera'} <RefreshCw size={18}/></Button>
+                  <div className="flex gap-2">
+                    <Button onClick={generateSeating} disabled={isGenerating}>{isGenerating ? '...' : 'Generera'} <RefreshCw size={18}/></Button>
+                    <Button variant="secondary" onClick={handlePrint} disabled={currentPlan.length === 0} title="Skriv ut eller spara som PDF">
+                      <Printer size={18} /> Skriv ut / PDF
+                    </Button>
+                  </div>
                 </div>
-                {generationMsg && <div className={`text-sm text-center px-4 py-2 rounded-lg ${generationMsg.includes("Klar") ? 'bg-green-100 text-green-800' : 'bg-blue-50'}`}>{generationMsg}</div>}
+                {generationMsg && <div className={`text-sm text-center px-4 py-2 rounded-lg print:hidden ${generationMsg.includes("Klar") ? 'bg-green-100 text-green-800' : 'bg-blue-50'}`}>{generationMsg}</div>}
                 
+                {/* INSTRUCTION (Endast synlig om inget är valt) */}
+                {currentPlan.length > 0 && selectedSeatIndex === null && (
+                   <p className="text-center text-xs text-gray-400 print:hidden italic mb-2">💡 Tips: Klicka på en elev och sedan på en annan plats för att byta plats.</p>
+                )}
+
                 {currentPlan.length > 0 && (
-                  <div className="overflow-x-auto pb-4 max-w-full">
+                  <div className="overflow-x-auto pb-4 max-w-full print:overflow-visible">
                     <div className="mx-auto border-t-8 border-gray-800 rounded-t-lg mb-8 w-2/3 max-w-lg text-center text-xs text-gray-500 pt-1 font-bold">WHITEBOARD</div>
                     <div 
                       className="grid gap-3 mx-auto max-w-full"
@@ -958,21 +970,34 @@ export default function App() {
                         minWidth: '100%'
                       }}
                     >
-                      {currentPlan.map((s, idx) => (
-                        <div key={idx} className={`h-24 p-2 rounded-lg border-2 flex flex-col items-center justify-center text-center relative ${s ? 'bg-white border-blue-100 shadow-sm' : 'bg-gray-50 border-gray-100 border-dashed'}`}>
-                          {s ? (
-                            <>
-                              <span className="font-bold text-sm">{s.name}</span>
-                              <div className="absolute top-1 right-1 flex gap-1">
-                                {s.needsFront && <div className="w-2 h-2 rounded-full bg-yellow-400" title="Nära tavlan"/>}
-                                {s.needsWall && <div className="w-2 h-2 rounded-full bg-green-400" title="Vid vägg"/>}
-                              </div>
-                            </>
-                          ) : <span className="text-gray-300 text-xs">Tom</span>}
-                        </div>
-                      ))}
+                      {currentPlan.map((s, idx) => {
+                        const isSelected = selectedSeatIndex === idx;
+                        return (
+                          <div 
+                            key={idx} 
+                            onClick={() => handleSeatClick(idx)}
+                            className={`
+                              h-24 p-2 rounded-lg border-2 flex flex-col items-center justify-center text-center relative cursor-pointer transition-all
+                              ${isSelected ? 'border-blue-500 ring-2 ring-blue-200 bg-blue-50 z-10 scale-105 shadow-md' : ''}
+                              ${s ? 'bg-white border-blue-100 shadow-sm hover:border-blue-300' : 'bg-gray-50 border-gray-100 border-dashed hover:bg-gray-100'}
+                              print:border-gray-300 print:shadow-none print:h-auto print:py-4
+                            `}
+                          >
+                            {s ? (
+                              <>
+                                <span className="font-bold text-sm print:text-base print:text-black">{s.name}</span>
+                                <div className="absolute top-1 right-1 flex gap-1 print:hidden">
+                                  {s.needsFront && <div className="w-2 h-2 rounded-full bg-yellow-400" title="Nära tavlan"/>}
+                                  {s.needsWall && <div className="w-2 h-2 rounded-full bg-green-400" title="Vid vägg"/>}
+                                </div>
+                                {isSelected && <div className="absolute -top-3 bg-blue-600 text-white text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1"><Move size={10}/> Flytta</div>}
+                              </>
+                            ) : <span className="text-gray-300 text-xs print:hidden">Tom</span>}
+                          </div>
+                        );
+                      })}
                     </div>
-                    <div className="mt-8 flex gap-4 justify-center items-end bg-white p-4 rounded-xl border">
+                    <div className="mt-8 flex gap-4 justify-center items-end bg-white p-4 rounded-xl border print:hidden">
                       <div className="flex-grow max-w-xs"><label className="text-xs text-gray-500 ml-1">Spara som:</label><Input placeholder="Vecka 42..." value={planName} onChange={e => setPlanName(e.target.value)}/></div>
                       <Button variant="secondary" onClick={saveCurrentPlan} disabled={!currentPlan.length}><Save size={18}/> Spara</Button>
                     </div>
@@ -985,7 +1010,7 @@ export default function App() {
 
         {/* --- HISTORY TAB --- */}
         {activeTab === 'history' && (
-          <div className="space-y-4">
+          <div className="space-y-4 print:hidden">
             {!currentClassId ? <div className="text-center py-10 text-gray-500">Välj en klass först.</div> : (
               <>
                 <h3 className="font-semibold text-gray-700">Sparade placeringar</h3>
