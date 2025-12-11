@@ -26,11 +26,17 @@ import {
   Move,
   PenTool,
   Grid3X3,
-  Armchair
+  Armchair,
+  Eraser,
+  Square,
+  Columns,
+  Maximize,
+  MousePointer2,
+  RotateCcw
 } from 'lucide-react';
 
 // --- LocalStorage Helper ---
-const STORAGE_KEY = 'classroom_seating_data_v2'; 
+const STORAGE_KEY = 'classroom_seating_data_v4'; 
 
 const saveToLocal = (data) => {
   try {
@@ -54,9 +60,9 @@ const loadFromLocal = () => {
 const Button = ({ onClick, children, variant = 'primary', className = '', disabled = false, title = '' }) => {
   const baseStyle = "px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 print:hidden justify-center";
   const variants = {
-    primary: "bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-300",
-    secondary: "bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:bg-gray-50",
-    danger: "bg-red-100 text-red-600 hover:bg-red-200",
+    primary: "bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-300 shadow-sm",
+    secondary: "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 disabled:bg-gray-50",
+    danger: "bg-red-50 text-red-600 hover:bg-red-100 border border-red-200",
     outline: "border border-gray-300 text-gray-700 hover:bg-gray-50",
     ghost: "bg-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-700"
   };
@@ -214,12 +220,19 @@ export default function App() {
   const [constraintStudent2, setConstraintStudent2] = useState('');
 
   // Layout State
-  const [rows, setRows] = useState(8); 
-  const [cols, setCols] = useState(8);
+  const DEFAULT_ROWS = 10;
+  const DEFAULT_COLS = 12;
+
+  const [rows, setRows] = useState(DEFAULT_ROWS); 
+  const [cols, setCols] = useState(DEFAULT_COLS);
   const [currentPlan, setCurrentPlan] = useState([]); 
   const [currentSeatMap, setCurrentSeatMap] = useState([]); 
   const [planName, setPlanName] = useState('');
+  
+  // Design Mode
   const [isDesignMode, setIsDesignMode] = useState(false); 
+  const [designBrush, setDesignBrush] = useState('single'); 
+  const [showGridSettings, setShowGridSettings] = useState(false);
 
   // Loading/Gen State
   const [isGenerating, setIsGenerating] = useState(false);
@@ -242,19 +255,24 @@ export default function App() {
     setSelectedSeatIndex(null);
 
     const active = data.activePlans?.[currentClassId];
+    const r = active?.rows || DEFAULT_ROWS;
+    const c = active?.cols || DEFAULT_COLS;
+
+    setRows(r);
+    setCols(c);
+
     if (active) {
-      setRows(active.rows);
-      setCols(active.cols);
-      setCurrentPlan(active.layout || Array(active.rows * active.cols).fill(null));
-      setCurrentSeatMap(active.seatMap || Array(active.rows * active.cols).fill(true));
+      setCurrentPlan(active.layout || Array(r * c).fill(null));
+      // Om ingen seatMap finns, anta att det är tomt (false) så användaren får bygga
+      setCurrentSeatMap(active.seatMap || Array(r * c).fill(false));
       setGenerationMsg(""); 
     } else {
-      const r = 8, c = 8;
-      setRows(r);
-      setCols(c);
+      // New Class: Start Empty
       setCurrentPlan(Array(r * c).fill(null));
-      setCurrentSeatMap(Array(r * c).fill(true));
+      setCurrentSeatMap(Array(r * c).fill(false)); 
       setGenerationMsg("");
+      // Auto-enable design mode for new classes to guide user
+      setIsDesignMode(true);
     }
   }, [currentClassId, data.activePlans]);
 
@@ -326,7 +344,7 @@ export default function App() {
     }));
   };
 
-  // --- Bulk & Paste Actions ---
+  // --- Bulk Actions ---
   const handleBulkChange = (id, field, value) => {
     setBulkList(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item));
   };
@@ -371,7 +389,6 @@ export default function App() {
         needsWall: false,
         createdAt: Date.now()
     }));
-    
     setData(prev => ({ ...prev, students: [...prev.students, ...newStudents] }));
   };
 
@@ -441,15 +458,19 @@ export default function App() {
   // --- GRID RESIZING ---
   const updateGridSize = (newRows, newCols) => {
     const newSize = newRows * newCols;
-    const newSeatMap = Array(newSize).fill(true); 
+    const newSeatMap = Array(newSize).fill(false); // Default to empty when resizing
     const newLayout = Array(newSize).fill(null);
 
+    // Copy old data
     for(let r=0; r<Math.min(rows, newRows); r++) {
       for(let c=0; c<Math.min(cols, newCols); c++) {
         const oldIdx = r * cols + c;
         const newIdx = r * newCols + c;
-        newSeatMap[newIdx] = currentSeatMap[oldIdx];
-        newLayout[newIdx] = currentPlan[oldIdx];
+        // Safety check
+        if (oldIdx < currentSeatMap.length) {
+            newSeatMap[newIdx] = currentSeatMap[oldIdx];
+            newLayout[newIdx] = currentPlan[oldIdx];
+        }
       }
     }
 
@@ -467,43 +488,89 @@ export default function App() {
     }));
   };
 
-  // --- LAYOUT TEMPLATES ---
-  const applyTemplate = (type) => {
-    let newMap = Array(rows * cols).fill(false); 
+  // --- DESIGN TOOLS ---
+  const applyDesignTool = (index) => {
+    const safeRows = rows || DEFAULT_ROWS;
+    const safeCols = cols || DEFAULT_COLS;
     
-    if (type === 'all') {
-      newMap.fill(true);
-    } else if (type === 'pairs') {
-      for(let r=0; r<rows; r++) {
-        for(let c=0; c<cols; c++) {
-          if (c % 3 !== 2) newMap[r*cols + c] = true;
+    const r = Math.floor(index / safeCols);
+    const c = index % safeCols;
+
+    // Create a fresh copy
+    let newMap = [...currentSeatMap];
+    let newLayout = [...currentPlan];
+    
+    // Check integrity
+    if (newMap.length !== safeRows * safeCols) {
+        console.warn("Grid size mismatch, resetting map size to match rows/cols");
+        const resizedMap = Array(safeRows * safeCols).fill(false);
+        const resizedLayout = Array(safeRows * safeCols).fill(null);
+        // Try to salvage
+        newMap.forEach((val, i) => { if(i < resizedMap.length) resizedMap[i] = val; });
+        newLayout.forEach((val, i) => { if(i < resizedLayout.length) resizedLayout[i] = val; });
+        newMap = resizedMap;
+        newLayout = resizedLayout;
+    }
+
+    const setSeat = (rr, cc, state) => {
+        if (rr >= 0 && rr < safeRows && cc >= 0 && cc < safeCols) {
+            const idx = rr * safeCols + cc;
+            newMap[idx] = state;
+            if (!state) newLayout[idx] = null; 
         }
-      }
-    } else if (type === 'groups4') {
-      for(let r=0; r<rows; r++) {
-        for(let c=0; c<cols; c++) {
-           if (r % 3 !== 2 && c % 3 !== 2) newMap[r*cols + c] = true;
-        }
-      }
-    } else if (type === 'u_shape') {
-      for(let r=0; r<rows; r++) {
-        for(let c=0; c<cols; c++) {
-          if (c === 0 || c === cols - 1 || r === rows - 1) {
-             newMap[r*cols + c] = true;
-          }
-        }
-      }
+    };
+
+    if (designBrush === 'eraser') {
+        setSeat(r, c, false);
+    } else if (designBrush === 'single') {
+        setSeat(r, c, true);
+    } else if (designBrush === 'pair') {
+        setSeat(r, c, true);
+        setSeat(r, c + 1, true);
+    } else if (designBrush === 'group4') {
+        setSeat(r, c, true);
+        setSeat(r, c + 1, true);
+        setSeat(r + 1, c, true);
+        setSeat(r + 1, c + 1, true);
+    } else if (designBrush === 'group5') {
+        // 5-group block
+        setSeat(r, c, true); setSeat(r, c + 1, true);
+        setSeat(r + 1, c, true); setSeat(r + 1, c + 1, true);
+        setSeat(r, c + 2, true); 
+    } else if (designBrush === 'group6') {
+        // 2x3
+        setSeat(r, c, true); setSeat(r, c + 1, true); setSeat(r, c + 2, true);
+        setSeat(r + 1, c, true); setSeat(r + 1, c + 1, true); setSeat(r + 1, c + 2, true);
     }
 
     setCurrentSeatMap(newMap);
-    const cleanLayout = currentPlan.map((s, i) => newMap[i] ? s : null);
-    setCurrentPlan(cleanLayout);
+    setCurrentPlan(newLayout);
     
+    // Force update to data state
     setData(prev => ({
         ...prev,
         activePlans: {
             ...prev.activePlans,
-            [currentClassId]: { layout: cleanLayout, seatMap: newMap, rows, cols }
+            [currentClassId]: { layout: newLayout, seatMap: newMap, rows: safeRows, cols: safeCols }
+        }
+    }));
+  };
+
+  const clearRoom = () => {
+      // Removed confirm dialog to fix bug where it might be blocked
+      const safeRows = rows || DEFAULT_ROWS;
+      const safeCols = cols || DEFAULT_COLS;
+      const newMap = Array(safeRows * safeCols).fill(false);
+      const newLayout = Array(safeRows * safeCols).fill(null);
+      
+      setCurrentSeatMap(newMap);
+      setCurrentPlan(newLayout);
+      
+      setData(prev => ({
+        ...prev,
+        activePlans: {
+            ...prev.activePlans,
+            [currentClassId]: { layout: newLayout, seatMap: newMap, rows: safeRows, cols: safeCols }
         }
     }));
   };
@@ -511,23 +578,10 @@ export default function App() {
   // --- INTERACTION ---
   const handleCellClick = (index) => {
     if (isDesignMode) {
-        const newMap = [...currentSeatMap];
-        newMap[index] = !newMap[index];
-        
-        const newLayout = [...currentPlan];
-        if (!newMap[index]) newLayout[index] = null;
-
-        setCurrentSeatMap(newMap);
-        setCurrentPlan(newLayout);
-        setData(prev => ({
-            ...prev,
-            activePlans: {
-                ...prev.activePlans,
-                [currentClassId]: { layout: newLayout, seatMap: newMap, rows, cols }
-            }
-        }));
+        applyDesignTool(index);
     } else {
-        if (!currentSeatMap[index]) return; 
+        // Normal Mode
+        if (!currentSeatMap[index]) return; // Can't select empty space
 
         if (selectedSeatIndex === null) {
             setSelectedSeatIndex(index);
@@ -552,28 +606,33 @@ export default function App() {
     }
   };
 
-  // --- ALGORITHM ---
+  // --- ALGORITHM (Updated to handle empty maps) ---
   const generateSeating = () => {
     const students = getStudents();
     const plans = getPlans();
     const constraints = getConstraints();
 
-    // Find all valid seat indices sorted (0..N) naturally implies Front->Back, Left->Right
     const validIndices = currentSeatMap.map((isSeat, idx) => isSeat ? idx : -1).filter(idx => idx !== -1);
     
+    if (validIndices.length === 0) {
+        alert("Du måste möblera klassrummet först! Klicka på 'Ändra möblering' och placera ut bänkar.");
+        return;
+    }
+
     if (students.length > validIndices.length) {
-        alert(`Varning: Det finns fler elever (${students.length}) än bänkar (${validIndices.length}). Några elever kommer inte få plats.`);
+        alert(`Varning: Fler elever (${students.length}) än bänkar (${validIndices.length}).`);
     }
 
     if (students.length === 0) {
       setGenerationMsg("Inga elever i vald klass.");
       return;
     }
+    
     setIsGenerating(true);
     setGenerationMsg("Analyserar...");
 
     setTimeout(() => {
-      // 1. Build history map
+      // 1. History
       const pastPairs = new Map();
       plans.forEach(plan => {
         const pCols = plan.cols;
@@ -587,19 +646,15 @@ export default function App() {
         }
       });
 
-      // 2. Prepare grid - Start fresh
+      // 2. Clear Grid
       let grid = Array(rows * cols).fill(null);
       let pool = [...students].sort(() => Math.random() - 0.5);
-
-      // --- NEW PLACEMENT LOGIC: Fill Front First ---
-      
       const takenIndices = new Set();
 
+      // 3. Placement Logic (Front to Back)
       const placeStudentAtFirstAvailable = (student, criteriaFn = () => true) => {
-        // Find first valid index that matches criteria and isn't taken
-        // validIndices is sorted 0..Max, so this automatically picks the front-most spot
+        // ValidIndices is naturally sorted 0->N (Top-Left to Bottom-Right)
         const spot = validIndices.find(idx => !takenIndices.has(idx) && criteriaFn(idx));
-        
         if (spot !== undefined) {
           grid[spot] = student;
           takenIndices.add(spot);
@@ -608,22 +663,18 @@ export default function App() {
         return false;
       };
 
-      // 1. Place Front Needs (Row 0 preferred)
+      // Priority 1: Front
       const frontGroup = pool.filter(s => s.needsFront);
       pool = pool.filter(s => !s.needsFront);
-      
       frontGroup.forEach(student => {
-         // Try row 0 first
          if (!placeStudentAtFirstAvailable(student, idx => Math.floor(idx / cols) === 0)) {
-             // Fallback to any spot
              placeStudentAtFirstAvailable(student);
          }
       });
 
-      // 2. Place Wall Needs
+      // Priority 2: Wall
       const wallGroup = pool.filter(s => s.needsWall);
       pool = pool.filter(s => !s.needsWall);
-
       wallGroup.forEach(student => {
           const isWall = (idx) => {
              const c = idx % cols;
@@ -634,30 +685,25 @@ export default function App() {
           }
       });
 
-      // 3. Place Remaining (Standard) - fills from front (index 0) onwards
+      // Priority 3: Rest
       pool.forEach(student => {
           placeStudentAtFirstAvailable(student);
       });
 
-      // ------------------------------------------------
-
-      // 6. Optimize (Swapping)
+      // 4. Optimize
       let bestGrid = [...grid];
       let bestScore = calculateScore(bestGrid, pastPairs, constraints);
 
-      // Only swap between valid seats
       for (let i = 0; i < 3000; i++) { 
         const r1 = Math.floor(Math.random() * validIndices.length);
         const r2 = Math.floor(Math.random() * validIndices.length);
         const idx1 = validIndices[r1];
         const idx2 = validIndices[r2];
-
         if (idx1 === idx2) continue;
 
         const s1 = grid[idx1];
         const s2 = grid[idx2];
         
-        // Only swap if constraints allow (check if swap destination is valid for specific student)
         const s1Valid = isValidPos(s1, idx2);
         const s2Valid = isValidPos(s2, idx1);
 
@@ -666,7 +712,6 @@ export default function App() {
           tempGrid[idx1] = s2;
           tempGrid[idx2] = s1;
           const score = calculateScore(tempGrid, pastPairs, constraints);
-          
           if (score < bestScore || (score === bestScore && Math.random() < 0.05)) {
             grid = tempGrid;
             bestScore = score;
@@ -717,8 +762,6 @@ export default function App() {
 
   const calculateScore = (gridToCheck, pastPairs, constraints) => {
     let score = 0;
-    
-    // Hard constraints
     constraints.forEach(c => {
       const idx1 = gridToCheck.findIndex(s => s?.id === c.student1);
       const idx2 = gridToCheck.findIndex(s => s?.id === c.student2);
@@ -727,47 +770,25 @@ export default function App() {
 
     for (let i = 0; i < gridToCheck.length; i++) {
       if (!gridToCheck[i]) continue;
-      
       const r = Math.floor(i / cols);
       const c = i % cols;
 
-      // --- NEW METRICS ---
+      score += r * 20; // Back row penalty
 
-      // 1. Back Row Penalty (Force Front-Loading)
-      // Lower row index (0) is better. Add penalty for higher rows.
-      score += r * 20;
-
-      // 2. Isolation Penalty (Avoid being alone)
       let neighborCount = 0;
-      
-      // Check Right
       if (c < cols - 1 && currentSeatMap[i+1] && gridToCheck[i+1]) neighborCount++;
-      // Check Left
       if (c > 0 && currentSeatMap[i-1] && gridToCheck[i-1]) neighborCount++;
-      // Check Down
       if (r < rows - 1 && currentSeatMap[i+cols] && gridToCheck[i+cols]) neighborCount++;
-      // Check Up
       if (r > 0 && currentSeatMap[i-cols] && gridToCheck[i-cols]) neighborCount++;
 
-      // If purely isolated (no immediate neighbors), BIG penalty
-      if (neighborCount === 0) score += 500;
+      if (neighborCount === 0) score += 500; // Isolation penalty
 
-      // --------------------
-
-      // Check right neighbor history
+      // History penalty
       if (c < cols - 1) {
           const neighborIdx = i + 1;
           if (currentSeatMap[neighborIdx] && gridToCheck[neighborIdx]) {
              const key = [gridToCheck[i].id, gridToCheck[neighborIdx].id].sort().join('-');
              if (pastPairs.has(key)) score += 50;
-          }
-      }
-      // Check bottom neighbor history
-      if (r < rows - 1) {
-          const neighborIdx = i + cols;
-          if (currentSeatMap[neighborIdx] && gridToCheck[neighborIdx]) {
-             const key = [gridToCheck[i].id, gridToCheck[neighborIdx].id].sort().join('-');
-             if (pastPairs.has(key)) score += 10;
           }
       }
     }
@@ -1078,35 +1099,42 @@ export default function App() {
                     {/* Top Row: Grid Size & Main Actions */}
                     <div className="flex flex-wrap justify-between items-center gap-4">
                         <div className="flex gap-4 items-center">
-                            <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-lg">
-                                <Grid3X3 size={16} className="text-gray-500" />
-                                <div className="flex gap-1 items-center">
-                                    <input 
-                                        type="number" 
-                                        value={rows} 
-                                        onChange={e => updateGridSize(parseInt(e.target.value)||1, cols)} 
-                                        className="w-12 p-1 border rounded text-center text-sm"
-                                    />
-                                    <span className="text-gray-400">x</span>
-                                    <input 
-                                        type="number" 
-                                        value={cols} 
-                                        onChange={e => updateGridSize(rows, parseInt(e.target.value)||1)} 
-                                        className="w-12 p-1 border rounded text-center text-sm"
-                                    />
-                                </div>
-                            </div>
-                            
-                            <div className="h-8 w-[1px] bg-gray-200 hidden sm:block"></div>
-
                             <Button 
                                 variant={isDesignMode ? "primary" : "outline"} 
                                 onClick={() => setIsDesignMode(!isDesignMode)}
-                                className={isDesignMode ? "bg-indigo-600 hover:bg-indigo-700" : ""}
+                                className={isDesignMode ? "bg-indigo-600 hover:bg-indigo-700 ring-2 ring-indigo-200" : ""}
                             >
                                 <PenTool size={16} /> 
                                 {isDesignMode ? "Klar med möblering" : "Ändra möblering"}
                             </Button>
+
+                            {/* Hidden Grid Settings Toggle */}
+                            {isDesignMode && (
+                                <button onClick={() => setShowGridSettings(!showGridSettings)} className="p-2 text-gray-400 hover:text-indigo-600" title="Ändra rumsstorlek">
+                                    <Settings size={16} />
+                                </button>
+                            )}
+
+                            {showGridSettings && isDesignMode && (
+                                <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-lg border border-indigo-100 animate-in fade-in zoom-in-95 duration-200">
+                                    <div className="flex gap-1 items-center">
+                                        <span className="text-xs text-gray-500 font-bold mr-1">Yta:</span>
+                                        <input 
+                                            type="number" 
+                                            value={rows} 
+                                            onChange={e => updateGridSize(parseInt(e.target.value)||1, cols)} 
+                                            className="w-12 p-1 border rounded text-center text-sm"
+                                        />
+                                        <span className="text-gray-400">x</span>
+                                        <input 
+                                            type="number" 
+                                            value={cols} 
+                                            onChange={e => updateGridSize(rows, parseInt(e.target.value)||1)} 
+                                            className="w-12 p-1 border rounded text-center text-sm"
+                                        />
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         <div className="flex gap-2">
@@ -1125,18 +1153,43 @@ export default function App() {
 
                     {/* Second Row: Design Tools (Only visible in Design Mode) */}
                     {isDesignMode && (
-                        <div className="bg-indigo-50 border border-indigo-100 p-3 rounded-lg flex flex-wrap gap-4 items-center animate-in slide-in-from-top-2 duration-200">
-                             <div className="text-sm font-medium text-indigo-900 flex items-center gap-2">
-                                <Armchair size={16} /> Mallar:
+                        <div className="bg-indigo-50 border border-indigo-100 p-3 rounded-lg flex flex-col gap-3 animate-in slide-in-from-top-2 duration-200">
+                             
+                             <div className="flex flex-wrap gap-2 items-center">
+                                <span className="text-xs font-bold text-indigo-900 uppercase tracking-wider mr-2">Verktyg:</span>
+                                
+                                <button onClick={() => setDesignBrush('single')} className={`p-2 rounded border flex items-center gap-2 text-sm ${designBrush === 'single' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-indigo-900 border-indigo-200 hover:bg-indigo-100'}`}>
+                                    <Square size={14} /> Enkel
+                                </button>
+                                <button onClick={() => setDesignBrush('pair')} className={`p-2 rounded border flex items-center gap-2 text-sm ${designBrush === 'pair' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-indigo-900 border-indigo-200 hover:bg-indigo-100'}`}>
+                                    <Columns size={14} /> Par (2)
+                                </button>
+                                <button onClick={() => setDesignBrush('group4')} className={`p-2 rounded border flex items-center gap-2 text-sm ${designBrush === 'group4' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-indigo-900 border-indigo-200 hover:bg-indigo-100'}`}>
+                                    <Grid3X3 size={14} /> Grupp (4)
+                                </button>
+                                <button onClick={() => setDesignBrush('group5')} className={`p-2 rounded border flex items-center gap-2 text-sm ${designBrush === 'group5' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-indigo-900 border-indigo-200 hover:bg-indigo-100'}`}>
+                                    <LayoutGrid size={14} /> Grupp (5)
+                                </button>
+                                <button onClick={() => setDesignBrush('group6')} className={`p-2 rounded border flex items-center gap-2 text-sm ${designBrush === 'group6' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-indigo-900 border-indigo-200 hover:bg-indigo-100'}`}>
+                                    <Maximize size={14} /> Grupp (6)
+                                </button>
+                                
+                                <div className="h-6 w-[1px] bg-indigo-200 mx-1"></div>
+
+                                <button onClick={() => setDesignBrush('eraser')} className={`p-2 rounded border flex items-center gap-2 text-sm ${designBrush === 'eraser' ? 'bg-red-100 text-red-900 border-red-200' : 'bg-white text-gray-700 border-gray-200 hover:bg-red-50'}`}>
+                                    <Eraser size={14} /> Sudda
+                                </button>
                              </div>
-                             <div className="flex gap-2">
-                                <button onClick={() => applyTemplate('all')} className="px-3 py-1 bg-white border border-indigo-200 rounded text-xs hover:bg-indigo-100 text-indigo-800">Alla bänkar</button>
-                                <button onClick={() => applyTemplate('pairs')} className="px-3 py-1 bg-white border border-indigo-200 rounded text-xs hover:bg-indigo-100 text-indigo-800">Parvis (2 och 2)</button>
-                                <button onClick={() => applyTemplate('groups4')} className="px-3 py-1 bg-white border border-indigo-200 rounded text-xs hover:bg-indigo-100 text-indigo-800">Öar (4 st)</button>
-                                <button onClick={() => applyTemplate('u_shape')} className="px-3 py-1 bg-white border border-indigo-200 rounded text-xs hover:bg-indigo-100 text-indigo-800">U-sittning</button>
-                             </div>
-                             <div className="ml-auto text-xs text-indigo-600 italic">
-                                Klicka på rutorna nedan för att ta bort/lägga till bänkar.
+
+                             <div className="flex justify-between items-center mt-1 border-t border-indigo-200 pt-2">
+                                <div className="text-xs text-indigo-600 italic flex items-center gap-1">
+                                    <MousePointer2 size={12}/> Klicka i rummet för att placera vald möbel.
+                                </div>
+                                <div className="flex gap-2">
+                                    <button onClick={clearRoom} className="text-xs font-medium text-red-600 hover:text-red-800 hover:bg-red-50 px-2 py-1 rounded flex items-center gap-1 transition-colors">
+                                        <RotateCcw size={12}/> Rensa rummet
+                                    </button>
+                                </div>
                              </div>
                         </div>
                     )}
@@ -1154,7 +1207,7 @@ export default function App() {
                     <div 
                       className="grid gap-2 mx-auto max-w-full select-none"
                       style={{ 
-                        gridTemplateColumns: `repeat(${cols}, minmax(80px, 1fr))`, 
+                        gridTemplateColumns: `repeat(${cols}, minmax(60px, 1fr))`, 
                         width: 'fit-content',
                         minWidth: '600px'
                       }}
@@ -1165,15 +1218,21 @@ export default function App() {
                         const isSelected = selectedSeatIndex === idx;
 
                         // Visual styling based on state
-                        let cellClass = "h-20 rounded-lg border flex flex-col items-center justify-center text-center relative transition-all ";
+                        let cellClass = "h-16 sm:h-20 rounded-lg border flex flex-col items-center justify-center text-center relative transition-all ";
                         
                         if (isDesignMode) {
                             cellClass += "cursor-pointer hover:ring-2 hover:ring-indigo-400 ";
-                            if (isSeat) cellClass += "bg-white border-indigo-200 shadow-sm ";
-                            else cellClass += "bg-gray-100 border-gray-200 opacity-50 "; // Void
+                            if (isSeat) {
+                                // DESIGN MODE: SEAT
+                                cellClass += "bg-indigo-50 border-indigo-300 shadow-sm ";
+                            } else {
+                                // DESIGN MODE: EMPTY VOID
+                                cellClass += "bg-white border-2 border-dashed border-gray-200 hover:border-indigo-200 "; 
+                            }
                         } else {
+                            // VIEW MODE
                             if (!isSeat) {
-                                cellClass += "border-transparent bg-transparent "; // Invisible void in view mode
+                                cellClass += "border-transparent bg-transparent opacity-0 pointer-events-none "; // Hide voids
                             } else {
                                 cellClass += "cursor-pointer ";
                                 if (isSelected) cellClass += "border-blue-500 ring-2 ring-blue-200 bg-blue-50 z-10 scale-105 shadow-md ";
@@ -1190,16 +1249,23 @@ export default function App() {
                           >
                             {isDesignMode ? (
                                 // DESIGN MODE CONTENT
-                                isSeat ? <Armchair size={16} className="text-indigo-300"/> : <X size={16} className="text-gray-300"/>
+                                isSeat ? (
+                                    <div className="text-indigo-600 flex flex-col items-center">
+                                        <Armchair size={24}/>
+                                        <span className="text-[10px] font-bold mt-1">BÄNK</span>
+                                    </div>
+                                ) : (
+                                    <span className="text-gray-300 text-[10px] font-bold">TOM</span>
+                                )
                             ) : (
                                 // PLACEMENT MODE CONTENT
                                 isSeat && (
                                     s ? (
                                         <>
-                                            <span className="font-bold text-sm leading-tight px-1 break-words w-full">{s.name}</span>
+                                            <span className="font-bold text-xs sm:text-sm leading-tight px-1 break-words w-full">{s.name}</span>
                                             <div className="absolute top-1 right-1 flex gap-1 print:hidden">
-                                                {s.needsFront && <div className="w-1.5 h-1.5 rounded-full bg-yellow-400" />}
-                                                {s.needsWall && <div className="w-1.5 h-1.5 rounded-full bg-green-400" />}
+                                                {s.needsFront && <div className="w-1.5 h-1.5 rounded-full bg-yellow-400" title="Nära tavlan"/>}
+                                                {s.needsWall && <div className="w-1.5 h-1.5 rounded-full bg-green-400" title="Vid vägg"/>}
                                             </div>
                                             {isSelected && <div className="absolute -top-2 bg-blue-600 text-white text-[9px] px-2 py-0.5 rounded-full flex items-center gap-1"><Move size={8}/> Flytta</div>}
                                         </>
