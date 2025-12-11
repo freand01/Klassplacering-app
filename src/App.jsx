@@ -23,11 +23,14 @@ import {
   FolderOpen,
   ClipboardList,
   Printer,
-  Move
+  Move,
+  PenTool,
+  Grid3X3,
+  Armchair
 } from 'lucide-react';
 
-// --- LocalStorage Helper (Kvar som "Autosave"/Session) ---
-const STORAGE_KEY = 'classroom_seating_data_v1';
+// --- LocalStorage Helper ---
+const STORAGE_KEY = 'classroom_seating_data_v2'; 
 
 const saveToLocal = (data) => {
   try {
@@ -49,7 +52,7 @@ const loadFromLocal = () => {
 // --- Components ---
 
 const Button = ({ onClick, children, variant = 'primary', className = '', disabled = false, title = '' }) => {
-  const baseStyle = "px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 print:hidden";
+  const baseStyle = "px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 print:hidden justify-center";
   const variants = {
     primary: "bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-300",
     secondary: "bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:bg-gray-50",
@@ -130,9 +133,7 @@ const EditStudentModal = ({ student, onClose, onSave }) => {
 const PasteImportModal = ({ onClose, onImport }) => {
   const [text, setText] = useState('');
 
-  // Helper to parse names
   const getParsedNames = (inputText) => {
-    // Split by newline OR comma, then trim and filter empty strings
     return inputText.split(/[\n,]+/).map(n => n.trim()).filter(n => n !== '');
   };
 
@@ -186,7 +187,7 @@ export default function App() {
     students: [],
     constraints: [],
     plans: [],
-    activePlans: {} // Format: { [classId]: { layout: [], rows: 5, cols: 6 } }
+    activePlans: {} 
   });
 
   const [currentClassId, setCurrentClassId] = useState('');
@@ -194,14 +195,14 @@ export default function App() {
   // States for Modals & Interactions
   const [editingStudent, setEditingStudent] = useState(null);
   const [showPasteModal, setShowPasteModal] = useState(false);
-  const [selectedSeatIndex, setSelectedSeatIndex] = useState(null); // För flytt/swap
+  const [selectedSeatIndex, setSelectedSeatIndex] = useState(null);
 
-  // Form Inputs - Single Add
+  // Form Inputs
   const [newClassName, setNewClassName] = useState('');
   const [newStudentName, setNewStudentName] = useState('');
   const [studentAttr, setStudentAttr] = useState({ front: false, wall: false });
   
-  // Form Inputs - Bulk Add
+  // Bulk Add
   const [isBulkMode, setIsBulkMode] = useState(false);
   const [bulkList, setBulkList] = useState([
     { id: '1', name: '', front: false, wall: false },
@@ -213,10 +214,12 @@ export default function App() {
   const [constraintStudent2, setConstraintStudent2] = useState('');
 
   // Layout State
-  const [rows, setRows] = useState(5);
-  const [cols, setCols] = useState(6);
-  const [currentPlan, setCurrentPlan] = useState([]);
+  const [rows, setRows] = useState(8); 
+  const [cols, setCols] = useState(8);
+  const [currentPlan, setCurrentPlan] = useState([]); 
+  const [currentSeatMap, setCurrentSeatMap] = useState([]); 
   const [planName, setPlanName] = useState('');
+  const [isDesignMode, setIsDesignMode] = useState(false); 
 
   // Loading/Gen State
   const [isGenerating, setIsGenerating] = useState(false);
@@ -236,16 +239,21 @@ export default function App() {
   // --- Sync Layout State when Class Changes ---
   useEffect(() => {
     if (!currentClassId) return;
-    setSelectedSeatIndex(null); // Reset selection on class change
+    setSelectedSeatIndex(null);
 
     const active = data.activePlans?.[currentClassId];
     if (active) {
-      setCurrentPlan(active.layout);
       setRows(active.rows);
       setCols(active.cols);
+      setCurrentPlan(active.layout || Array(active.rows * active.cols).fill(null));
+      setCurrentSeatMap(active.seatMap || Array(active.rows * active.cols).fill(true));
       setGenerationMsg(""); 
     } else {
-      setCurrentPlan([]);
+      const r = 8, c = 8;
+      setRows(r);
+      setCols(c);
+      setCurrentPlan(Array(r * c).fill(null));
+      setCurrentSeatMap(Array(r * c).fill(true));
       setGenerationMsg("");
     }
   }, [currentClassId, data.activePlans]);
@@ -257,7 +265,7 @@ export default function App() {
     }
   }, [data]);
 
-  // --- Helpers for Filtering ---
+  // --- Helpers ---
   const getStudents = () => data.students.filter(s => s.classId === currentClassId).sort((a,b) => a.name.localeCompare(b.name));
   const getConstraints = () => {
     const classStudentIds = new Set(getStudents().map(s => s.id));
@@ -368,7 +376,6 @@ export default function App() {
   };
 
   // --- Constraint Actions ---
-
   const addConstraint = () => {
     if (!constraintStudent1 || !constraintStudent2 || constraintStudent1 === constraintStudent2) return;
     const newConstraint = {
@@ -388,7 +395,6 @@ export default function App() {
   };
 
   // --- Plan Actions ---
-
   const saveCurrentPlan = () => {
     if (currentPlan.length === 0 || !currentClassId) return;
     const name = planName || `Placering ${new Date().toLocaleDateString('sv-SE')}`;
@@ -399,6 +405,7 @@ export default function App() {
       rows,
       cols,
       layout: currentPlan,
+      seatMap: currentSeatMap,
       createdAt: Date.now()
     };
     setData(prev => ({ ...prev, plans: [newPlan, ...prev.plans] }));
@@ -414,97 +421,149 @@ export default function App() {
     setRows(plan.rows);
     setCols(plan.cols);
     setCurrentPlan(plan.layout);
+    setCurrentSeatMap(plan.seatMap || Array(plan.rows * plan.cols).fill(true));
     
     setData(prev => ({
         ...prev,
         activePlans: {
             ...prev.activePlans,
-            [plan.classId]: { layout: plan.layout, rows: plan.rows, cols: plan.cols }
+            [plan.classId]: { 
+              layout: plan.layout, 
+              seatMap: plan.seatMap || Array(plan.rows * plan.cols).fill(true), 
+              rows: plan.rows, 
+              cols: plan.cols 
+            }
         }
     }));
-    
     setActiveTab('layout');
   };
 
-  // --- SEAT SWAPPING (Drag-and-Drop alternative) ---
-  const handleSeatClick = (index) => {
-    // If no seat selected, select this one
-    if (selectedSeatIndex === null) {
-        setSelectedSeatIndex(index);
-        return;
+  // --- GRID RESIZING ---
+  const updateGridSize = (newRows, newCols) => {
+    const newSize = newRows * newCols;
+    const newSeatMap = Array(newSize).fill(true); 
+    const newLayout = Array(newSize).fill(null);
+
+    for(let r=0; r<Math.min(rows, newRows); r++) {
+      for(let c=0; c<Math.min(cols, newCols); c++) {
+        const oldIdx = r * cols + c;
+        const newIdx = r * newCols + c;
+        newSeatMap[newIdx] = currentSeatMap[oldIdx];
+        newLayout[newIdx] = currentPlan[oldIdx];
+      }
     }
 
-    // If clicking the same seat, deselect
-    if (selectedSeatIndex === index) {
-        setSelectedSeatIndex(null);
-        return;
-    }
-
-    // Perform Swap
-    const newLayout = [...currentPlan];
-    const temp = newLayout[selectedSeatIndex];
-    newLayout[selectedSeatIndex] = newLayout[index];
-    newLayout[index] = temp;
-
+    setRows(newRows);
+    setCols(newCols);
+    setCurrentSeatMap(newSeatMap);
     setCurrentPlan(newLayout);
-    setSelectedSeatIndex(null); // Clear selection
-
-    // Update active plan immediately
+    
     setData(prev => ({
         ...prev,
         activePlans: {
             ...prev.activePlans,
-            [currentClassId]: { layout: newLayout, rows, cols }
+            [currentClassId]: { layout: newLayout, seatMap: newSeatMap, rows: newRows, cols: newCols }
         }
     }));
   };
 
-  // --- PRINTING ---
-  const handlePrint = () => {
-    window.print();
-  };
-
-  // --- EXPORT/IMPORT ---
-  const exportData = () => {
-    const dataStr = JSON.stringify(data, null, 2);
-    const blob = new Blob([dataStr], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `klassplacering_projekt_${new Date().toISOString().slice(0,10)}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const importData = (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const imported = JSON.parse(e.target.result);
-        if (imported.classes && imported.students) {
-           if(confirm("Vill du öppna detta projekt? All osparad data i nuvarande session kommer ersättas.")) {
-             setData({ ...imported, activePlans: imported.activePlans || {} });
-             if(imported.classes.length > 0) setCurrentClassId(imported.classes[0].id);
-           }
-        } else {
-          alert("Felaktigt filformat.");
+  // --- LAYOUT TEMPLATES ---
+  const applyTemplate = (type) => {
+    let newMap = Array(rows * cols).fill(false); 
+    
+    if (type === 'all') {
+      newMap.fill(true);
+    } else if (type === 'pairs') {
+      for(let r=0; r<rows; r++) {
+        for(let c=0; c<cols; c++) {
+          if (c % 3 !== 2) newMap[r*cols + c] = true;
         }
-      } catch (error) {
-        alert("Kunde inte läsa filen.");
       }
-      event.target.value = '';
-    };
-    reader.readAsText(file);
+    } else if (type === 'groups4') {
+      for(let r=0; r<rows; r++) {
+        for(let c=0; c<cols; c++) {
+           if (r % 3 !== 2 && c % 3 !== 2) newMap[r*cols + c] = true;
+        }
+      }
+    } else if (type === 'u_shape') {
+      for(let r=0; r<rows; r++) {
+        for(let c=0; c<cols; c++) {
+          if (c === 0 || c === cols - 1 || r === rows - 1) {
+             newMap[r*cols + c] = true;
+          }
+        }
+      }
+    }
+
+    setCurrentSeatMap(newMap);
+    const cleanLayout = currentPlan.map((s, i) => newMap[i] ? s : null);
+    setCurrentPlan(cleanLayout);
+    
+    setData(prev => ({
+        ...prev,
+        activePlans: {
+            ...prev.activePlans,
+            [currentClassId]: { layout: cleanLayout, seatMap: newMap, rows, cols }
+        }
+    }));
   };
 
-  // --- ALGORITHM (Compressed for brevity) ---
+  // --- INTERACTION ---
+  const handleCellClick = (index) => {
+    if (isDesignMode) {
+        const newMap = [...currentSeatMap];
+        newMap[index] = !newMap[index];
+        
+        const newLayout = [...currentPlan];
+        if (!newMap[index]) newLayout[index] = null;
+
+        setCurrentSeatMap(newMap);
+        setCurrentPlan(newLayout);
+        setData(prev => ({
+            ...prev,
+            activePlans: {
+                ...prev.activePlans,
+                [currentClassId]: { layout: newLayout, seatMap: newMap, rows, cols }
+            }
+        }));
+    } else {
+        if (!currentSeatMap[index]) return; 
+
+        if (selectedSeatIndex === null) {
+            setSelectedSeatIndex(index);
+        } else if (selectedSeatIndex === index) {
+            setSelectedSeatIndex(null);
+        } else {
+            const newLayout = [...currentPlan];
+            const temp = newLayout[selectedSeatIndex];
+            newLayout[selectedSeatIndex] = newLayout[index];
+            newLayout[index] = temp;
+            
+            setCurrentPlan(newLayout);
+            setSelectedSeatIndex(null);
+            setData(prev => ({
+                ...prev,
+                activePlans: {
+                    ...prev.activePlans,
+                    [currentClassId]: { layout: newLayout, seatMap: currentSeatMap, rows, cols }
+                }
+            }));
+        }
+    }
+  };
+
+  // --- ALGORITHM ---
   const generateSeating = () => {
     const students = getStudents();
     const plans = getPlans();
     const constraints = getConstraints();
+
+    // Find all valid seat indices sorted (0..N) naturally implies Front->Back, Left->Right
+    const validIndices = currentSeatMap.map((isSeat, idx) => isSeat ? idx : -1).filter(idx => idx !== -1);
+    
+    if (students.length > validIndices.length) {
+        alert(`Varning: Det finns fler elever (${students.length}) än bänkar (${validIndices.length}). Några elever kommer inte få plats.`);
+    }
 
     if (students.length === 0) {
       setGenerationMsg("Inga elever i vald klass.");
@@ -514,6 +573,7 @@ export default function App() {
     setGenerationMsg("Analyserar...");
 
     setTimeout(() => {
+      // 1. Build history map
       const pastPairs = new Map();
       plans.forEach(plan => {
         const pCols = plan.cols;
@@ -521,61 +581,87 @@ export default function App() {
         for (let i = 0; i < layout.length; i++) {
           if (!layout[i]) continue;
           if ((i % pCols) !== (pCols - 1)) {
-            const neighbor = layout[i + 1];
-            if (neighbor) registerPair(pastPairs, layout[i].id, neighbor.id);
+             const neighbor = layout[i + 1];
+             if (neighbor) registerPair(pastPairs, layout[i].id, neighbor.id);
           }
         }
       });
 
-      const requiredSeats = rows * cols;
-      let grid = Array(requiredSeats).fill(null);
+      // 2. Prepare grid - Start fresh
+      let grid = Array(rows * cols).fill(null);
       let pool = [...students].sort(() => Math.random() - 0.5);
 
-      const frontRowIndices = Array.from({length: cols}, (_, i) => i);
-      const wallIndices = [];
-      for(let r=0; r<rows; r++) {
-        wallIndices.push(r * cols); 
-        if (cols > 1) wallIndices.push(r * cols + cols - 1); 
-      }
+      // --- NEW PLACEMENT LOGIC: Fill Front First ---
       
-      const placeGroup = (filterFn, allowedIndices) => {
-        const group = pool.filter(filterFn);
-        pool = pool.filter(s => !filterFn(s));
-        group.forEach(student => {
-          const availableSpots = allowedIndices.filter(idx => grid[idx] === null);
-          if (availableSpots.length > 0) {
-            const spot = availableSpots[Math.floor(Math.random() * availableSpots.length)];
-            grid[spot] = student;
-          } else {
-            pool.push(student);
-          }
-        });
+      const takenIndices = new Set();
+
+      const placeStudentAtFirstAvailable = (student, criteriaFn = () => true) => {
+        // Find first valid index that matches criteria and isn't taken
+        // validIndices is sorted 0..Max, so this automatically picks the front-most spot
+        const spot = validIndices.find(idx => !takenIndices.has(idx) && criteriaFn(idx));
+        
+        if (spot !== undefined) {
+          grid[spot] = student;
+          takenIndices.add(spot);
+          return true;
+        }
+        return false;
       };
 
-      placeGroup(s => s.needsFront, frontRowIndices);
-      placeGroup(s => s.needsWall, wallIndices);
-
-      for (let i = 0; i < grid.length; i++) {
-        if (grid[i] === null && pool.length > 0) {
-          const studentToPlace = pool[pool.length - 1]; 
-          if(isValidPos(studentToPlace, i)) {
-            grid[i] = pool.pop();
-          }
-        }
-      }
+      // 1. Place Front Needs (Row 0 preferred)
+      const frontGroup = pool.filter(s => s.needsFront);
+      pool = pool.filter(s => !s.needsFront);
       
+      frontGroup.forEach(student => {
+         // Try row 0 first
+         if (!placeStudentAtFirstAvailable(student, idx => Math.floor(idx / cols) === 0)) {
+             // Fallback to any spot
+             placeStudentAtFirstAvailable(student);
+         }
+      });
+
+      // 2. Place Wall Needs
+      const wallGroup = pool.filter(s => s.needsWall);
+      pool = pool.filter(s => !s.needsWall);
+
+      wallGroup.forEach(student => {
+          const isWall = (idx) => {
+             const c = idx % cols;
+             return c === 0 || c === cols - 1;
+          };
+          if (!placeStudentAtFirstAvailable(student, isWall)) {
+              placeStudentAtFirstAvailable(student);
+          }
+      });
+
+      // 3. Place Remaining (Standard) - fills from front (index 0) onwards
+      pool.forEach(student => {
+          placeStudentAtFirstAvailable(student);
+      });
+
+      // ------------------------------------------------
+
+      // 6. Optimize (Swapping)
       let bestGrid = [...grid];
       let bestScore = calculateScore(bestGrid, pastPairs, constraints);
 
-      for (let i = 0; i < 1500; i++) { 
-        const idx1 = Math.floor(Math.random() * grid.length);
-        const idx2 = Math.floor(Math.random() * grid.length);
+      // Only swap between valid seats
+      for (let i = 0; i < 3000; i++) { 
+        const r1 = Math.floor(Math.random() * validIndices.length);
+        const r2 = Math.floor(Math.random() * validIndices.length);
+        const idx1 = validIndices[r1];
+        const idx2 = validIndices[r2];
+
+        if (idx1 === idx2) continue;
+
         const s1 = grid[idx1];
         const s2 = grid[idx2];
-        const s1ValidAt2 = isValidPos(s1, idx2);
-        const s2ValidAt1 = isValidPos(s2, idx1);
+        
+        // Only swap if constraints allow (check if swap destination is valid for specific student)
+        const s1Valid = isValidPos(s1, idx2);
+        const s2Valid = isValidPos(s2, idx1);
 
-        if (s1ValidAt2 && s2ValidAt1) {
+        if (s1Valid && s2Valid) {
           const tempGrid = [...grid];
           tempGrid[idx1] = s2;
           tempGrid[idx2] = s1;
@@ -594,16 +680,14 @@ export default function App() {
         ...prev,
         activePlans: {
             ...prev.activePlans,
-            [currentClassId]: { layout: bestGrid, rows: rows, cols: cols }
+            [currentClassId]: { layout: bestGrid, seatMap: currentSeatMap, rows, cols }
         }
-      }));
+    }));
       
       const hardConflicts = countHardConflicts(bestGrid, constraints);
-      const softConflicts = countSoftConflicts(bestGrid, pastPairs);
       let msg = "Klar!";
-      if (hardConflicts > 0) msg += ` ${hardConflicts} regelbrott kvar.`;
-      if (softConflicts > 0) msg += ` ${softConflicts} upprepade par.`;
-      if (hardConflicts === 0 && softConflicts === 0) msg += " Inga konflikter!";
+      if (hardConflicts > 0) msg += ` ${hardConflicts} regelbrott.`;
+      else msg += " Inga regelbrott.";
       setGenerationMsg(msg);
       setIsGenerating(false);
     }, 100);
@@ -623,32 +707,71 @@ export default function App() {
     return true;
   };
 
-  const calculateScore = (gridToCheck, pastPairs, constraints) => {
-    let score = 0;
-    constraints.forEach(c => {
-      const idx1 = gridToCheck.findIndex(s => s?.id === c.student1);
-      const idx2 = gridToCheck.findIndex(s => s?.id === c.student2);
-      if (idx1 !== -1 && idx2 !== -1 && areNeighbors(idx1, idx2)) score += 1000; 
-    });
-    for (let i = 0; i < gridToCheck.length; i++) {
-      if (!gridToCheck[i]) continue;
-      if ((i % cols) !== (cols - 1)) {
-        const neighbor = gridToCheck[i+1];
-        if (neighbor) {
-          const key = [gridToCheck[i].id, neighbor.id].sort().join('-');
-          if (pastPairs.has(key)) score += 1;
-        }
-      }
-    }
-    return score;
-  };
-
   const areNeighbors = (idx1, idx2) => {
     const r1 = Math.floor(idx1 / cols);
     const c1 = idx1 % cols;
     const r2 = Math.floor(idx2 / cols);
     const c2 = idx2 % cols;
     return (Math.abs(r1 - r2) + Math.abs(c1 - c2)) === 1;
+  };
+
+  const calculateScore = (gridToCheck, pastPairs, constraints) => {
+    let score = 0;
+    
+    // Hard constraints
+    constraints.forEach(c => {
+      const idx1 = gridToCheck.findIndex(s => s?.id === c.student1);
+      const idx2 = gridToCheck.findIndex(s => s?.id === c.student2);
+      if (idx1 !== -1 && idx2 !== -1 && areNeighbors(idx1, idx2)) score += 5000; 
+    });
+
+    for (let i = 0; i < gridToCheck.length; i++) {
+      if (!gridToCheck[i]) continue;
+      
+      const r = Math.floor(i / cols);
+      const c = i % cols;
+
+      // --- NEW METRICS ---
+
+      // 1. Back Row Penalty (Force Front-Loading)
+      // Lower row index (0) is better. Add penalty for higher rows.
+      score += r * 20;
+
+      // 2. Isolation Penalty (Avoid being alone)
+      let neighborCount = 0;
+      
+      // Check Right
+      if (c < cols - 1 && currentSeatMap[i+1] && gridToCheck[i+1]) neighborCount++;
+      // Check Left
+      if (c > 0 && currentSeatMap[i-1] && gridToCheck[i-1]) neighborCount++;
+      // Check Down
+      if (r < rows - 1 && currentSeatMap[i+cols] && gridToCheck[i+cols]) neighborCount++;
+      // Check Up
+      if (r > 0 && currentSeatMap[i-cols] && gridToCheck[i-cols]) neighborCount++;
+
+      // If purely isolated (no immediate neighbors), BIG penalty
+      if (neighborCount === 0) score += 500;
+
+      // --------------------
+
+      // Check right neighbor history
+      if (c < cols - 1) {
+          const neighborIdx = i + 1;
+          if (currentSeatMap[neighborIdx] && gridToCheck[neighborIdx]) {
+             const key = [gridToCheck[i].id, gridToCheck[neighborIdx].id].sort().join('-');
+             if (pastPairs.has(key)) score += 50;
+          }
+      }
+      // Check bottom neighbor history
+      if (r < rows - 1) {
+          const neighborIdx = i + cols;
+          if (currentSeatMap[neighborIdx] && gridToCheck[neighborIdx]) {
+             const key = [gridToCheck[i].id, gridToCheck[neighborIdx].id].sort().join('-');
+             if (pastPairs.has(key)) score += 10;
+          }
+      }
+    }
+    return score;
   };
 
   const countHardConflicts = (grid, constraints) => {
@@ -661,21 +784,7 @@ export default function App() {
     return count;
   };
 
-  const countSoftConflicts = (grid, pastPairs) => {
-    let count = 0;
-    for (let i = 0; i < grid.length; i++) {
-      if (!grid[i]) continue;
-      if ((i % cols) !== (cols - 1)) {
-        const neighbor = grid[i+1];
-        if (neighbor) {
-          const key = [grid[i].id, neighbor.id].sort().join('-');
-          if (pastPairs.has(key)) count++;
-        }
-      }
-    }
-    return count;
-  };
-
+  // --- RENDER ---
   const renderClassSelector = () => (
     <div className="bg-white border-b border-gray-200 p-4 print:hidden">
       <div className="max-w-5xl mx-auto flex flex-col md:flex-row gap-4 items-center justify-between">
@@ -717,7 +826,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800 font-sans pb-10 print:bg-white print:pb-0">
       
-      {/* MODALS (Alltid dolda vid print) */}
+      {/* MODALS */}
       {editingStudent && (
         <EditStudentModal 
           student={editingStudent} 
@@ -732,7 +841,7 @@ export default function App() {
         />
       )}
 
-      {/* HEADER (Dold vid print) */}
+      {/* HEADER */}
       <header className="bg-white sticky top-0 z-10 shadow-sm print:hidden">
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between border-b border-gray-100">
           <div className="flex items-center gap-2">
@@ -740,13 +849,38 @@ export default function App() {
             <h1 className="text-xl font-bold tracking-tight">KlassPlacering</h1>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" className="text-xs px-2" onClick={exportData} title="Spara ner all data till en fil på datorn">
-              <FileJson size={14} /> Spara Projekt
+            <Button variant="outline" className="text-xs px-2" onClick={() => {
+                const dataStr = JSON.stringify(data, null, 2);
+                const blob = new Blob([dataStr], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `klassplacering_projekt_${new Date().toISOString().slice(0,10)}.json`;
+                document.body.appendChild(link);
+                link.click();
+            }} title="Spara">
+              <FileJson size={14} /> Spara
             </Button>
             <label className="cursor-pointer">
-               <input type="file" onChange={importData} accept=".json" className="hidden" />
+               <input type="file" onChange={(e) => {
+                   const file = e.target.files[0];
+                   if (!file) return;
+                   const reader = new FileReader();
+                   reader.onload = (ev) => {
+                     try {
+                       const imported = JSON.parse(ev.target.result);
+                       if (imported.classes) {
+                          if(confirm("Ladda in projekt?")) {
+                            setData({ ...imported, activePlans: imported.activePlans || {} });
+                            if(imported.classes.length > 0) setCurrentClassId(imported.classes[0].id);
+                          }
+                       }
+                     } catch(err){ alert("Fel vid inläsning"); }
+                   };
+                   reader.readAsText(file);
+               }} accept=".json" className="hidden" />
                <div className="px-3 py-2 border border-gray-300 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 bg-white text-gray-700 hover:bg-gray-50 text-xs h-full">
-                 <FolderOpen size={14} /> Öppna Projekt
+                 <FolderOpen size={14} /> Öppna
                </div>
             </label>
           </div>
@@ -778,7 +912,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* PRINT HEADER (Endast synlig vid print) */}
+      {/* PRINT HEADER */}
       <div className="hidden print:block text-center py-4 mb-4 border-b">
         <h1 className="text-2xl font-bold">{data.classes.find(c => c.id === currentClassId)?.name}</h1>
         <p className="text-sm text-gray-500">Placering genererad {new Date().toLocaleDateString('sv-SE')}</p>
@@ -940,69 +1074,150 @@ export default function App() {
             {!currentClassId ? <div className="text-center py-10 text-gray-500">Välj en klass först.</div> : (
               <>
                 {/* CONTROLS (Döljs vid print) */}
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-wrap gap-4 items-center justify-between print:hidden">
-                  <div className="flex gap-4">
-                    <div><label className="text-xs font-bold text-gray-500">Rader</label><input type="number" value={rows} onChange={e => setRows(parseInt(e.target.value)||1)} className="w-16 p-2 border rounded text-center"/></div>
-                    <div><label className="text-xs font-bold text-gray-500">Kolumner</label><input type="number" value={cols} onChange={e => setCols(parseInt(e.target.value)||1)} className="w-16 p-2 border rounded text-center"/></div>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button onClick={generateSeating} disabled={isGenerating}>{isGenerating ? '...' : 'Generera'} <RefreshCw size={18}/></Button>
-                    <Button variant="secondary" onClick={handlePrint} disabled={currentPlan.length === 0} title="Skriv ut eller spara som PDF">
-                      <Printer size={18} /> Skriv ut / PDF
-                    </Button>
-                  </div>
+                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col gap-4 print:hidden">
+                    {/* Top Row: Grid Size & Main Actions */}
+                    <div className="flex flex-wrap justify-between items-center gap-4">
+                        <div className="flex gap-4 items-center">
+                            <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-lg">
+                                <Grid3X3 size={16} className="text-gray-500" />
+                                <div className="flex gap-1 items-center">
+                                    <input 
+                                        type="number" 
+                                        value={rows} 
+                                        onChange={e => updateGridSize(parseInt(e.target.value)||1, cols)} 
+                                        className="w-12 p-1 border rounded text-center text-sm"
+                                    />
+                                    <span className="text-gray-400">x</span>
+                                    <input 
+                                        type="number" 
+                                        value={cols} 
+                                        onChange={e => updateGridSize(rows, parseInt(e.target.value)||1)} 
+                                        className="w-12 p-1 border rounded text-center text-sm"
+                                    />
+                                </div>
+                            </div>
+                            
+                            <div className="h-8 w-[1px] bg-gray-200 hidden sm:block"></div>
+
+                            <Button 
+                                variant={isDesignMode ? "primary" : "outline"} 
+                                onClick={() => setIsDesignMode(!isDesignMode)}
+                                className={isDesignMode ? "bg-indigo-600 hover:bg-indigo-700" : ""}
+                            >
+                                <PenTool size={16} /> 
+                                {isDesignMode ? "Klar med möblering" : "Ändra möblering"}
+                            </Button>
+                        </div>
+
+                        <div className="flex gap-2">
+                             {!isDesignMode && (
+                                <>
+                                <Button onClick={generateSeating} disabled={isGenerating}>
+                                    {isGenerating ? '...' : 'Generera'} <RefreshCw size={18}/>
+                                </Button>
+                                <Button variant="secondary" onClick={() => window.print()} disabled={currentPlan.length === 0}>
+                                    <Printer size={18} /> Skriv ut
+                                </Button>
+                                </>
+                             )}
+                        </div>
+                    </div>
+
+                    {/* Second Row: Design Tools (Only visible in Design Mode) */}
+                    {isDesignMode && (
+                        <div className="bg-indigo-50 border border-indigo-100 p-3 rounded-lg flex flex-wrap gap-4 items-center animate-in slide-in-from-top-2 duration-200">
+                             <div className="text-sm font-medium text-indigo-900 flex items-center gap-2">
+                                <Armchair size={16} /> Mallar:
+                             </div>
+                             <div className="flex gap-2">
+                                <button onClick={() => applyTemplate('all')} className="px-3 py-1 bg-white border border-indigo-200 rounded text-xs hover:bg-indigo-100 text-indigo-800">Alla bänkar</button>
+                                <button onClick={() => applyTemplate('pairs')} className="px-3 py-1 bg-white border border-indigo-200 rounded text-xs hover:bg-indigo-100 text-indigo-800">Parvis (2 och 2)</button>
+                                <button onClick={() => applyTemplate('groups4')} className="px-3 py-1 bg-white border border-indigo-200 rounded text-xs hover:bg-indigo-100 text-indigo-800">Öar (4 st)</button>
+                                <button onClick={() => applyTemplate('u_shape')} className="px-3 py-1 bg-white border border-indigo-200 rounded text-xs hover:bg-indigo-100 text-indigo-800">U-sittning</button>
+                             </div>
+                             <div className="ml-auto text-xs text-indigo-600 italic">
+                                Klicka på rutorna nedan för att ta bort/lägga till bänkar.
+                             </div>
+                        </div>
+                    )}
                 </div>
-                {generationMsg && <div className={`text-sm text-center px-4 py-2 rounded-lg print:hidden ${generationMsg.includes("Klar") ? 'bg-green-100 text-green-800' : 'bg-blue-50'}`}>{generationMsg}</div>}
+
+                {generationMsg && !isDesignMode && <div className={`text-sm text-center px-4 py-2 rounded-lg print:hidden ${generationMsg.includes("Klar") ? 'bg-green-100 text-green-800' : 'bg-blue-50'}`}>{generationMsg}</div>}
                 
-                {/* INSTRUCTION (Endast synlig om inget är valt) */}
-                {currentPlan.length > 0 && selectedSeatIndex === null && (
+                {currentPlan.length > 0 && selectedSeatIndex === null && !isDesignMode && (
                    <p className="text-center text-xs text-gray-400 print:hidden italic mb-2">💡 Tips: Klicka på en elev och sedan på en annan plats för att byta plats.</p>
                 )}
 
-                {currentPlan.length > 0 && (
-                  <div className="overflow-x-auto pb-4 max-w-full print:overflow-visible">
+                {/* VISUAL GRID */}
+                <div className="overflow-x-auto pb-4 max-w-full print:overflow-visible">
                     <div className="mx-auto border-t-8 border-gray-800 rounded-t-lg mb-8 w-2/3 max-w-lg text-center text-xs text-gray-500 pt-1 font-bold">WHITEBOARD</div>
                     <div 
-                      className="grid gap-3 mx-auto max-w-full"
+                      className="grid gap-2 mx-auto max-w-full select-none"
                       style={{ 
-                        gridTemplateColumns: `repeat(${cols}, minmax(100px, 1fr))`, 
+                        gridTemplateColumns: `repeat(${cols}, minmax(80px, 1fr))`, 
                         width: 'fit-content',
-                        minWidth: '100%'
+                        minWidth: '600px'
                       }}
                     >
-                      {currentPlan.map((s, idx) => {
+                      {Array.from({length: rows*cols}).map((_, idx) => {
+                        const s = currentPlan[idx];
+                        const isSeat = currentSeatMap[idx];
                         const isSelected = selectedSeatIndex === idx;
+
+                        // Visual styling based on state
+                        let cellClass = "h-20 rounded-lg border flex flex-col items-center justify-center text-center relative transition-all ";
+                        
+                        if (isDesignMode) {
+                            cellClass += "cursor-pointer hover:ring-2 hover:ring-indigo-400 ";
+                            if (isSeat) cellClass += "bg-white border-indigo-200 shadow-sm ";
+                            else cellClass += "bg-gray-100 border-gray-200 opacity-50 "; // Void
+                        } else {
+                            if (!isSeat) {
+                                cellClass += "border-transparent bg-transparent "; // Invisible void in view mode
+                            } else {
+                                cellClass += "cursor-pointer ";
+                                if (isSelected) cellClass += "border-blue-500 ring-2 ring-blue-200 bg-blue-50 z-10 scale-105 shadow-md ";
+                                else if (s) cellClass += "bg-white border-blue-100 shadow-sm hover:border-blue-300 ";
+                                else cellClass += "bg-gray-50 border-gray-200 border-dashed hover:bg-gray-100 "; // Empty Seat
+                            }
+                        }
+
                         return (
                           <div 
                             key={idx} 
-                            onClick={() => handleSeatClick(idx)}
-                            className={`
-                              h-24 p-2 rounded-lg border-2 flex flex-col items-center justify-center text-center relative cursor-pointer transition-all
-                              ${isSelected ? 'border-blue-500 ring-2 ring-blue-200 bg-blue-50 z-10 scale-105 shadow-md' : ''}
-                              ${s ? 'bg-white border-blue-100 shadow-sm hover:border-blue-300' : 'bg-gray-50 border-gray-100 border-dashed hover:bg-gray-100'}
-                              print:border-gray-300 print:shadow-none print:h-auto print:py-4
-                            `}
+                            onClick={() => handleCellClick(idx)}
+                            className={cellClass}
                           >
-                            {s ? (
-                              <>
-                                <span className="font-bold text-sm print:text-base print:text-black">{s.name}</span>
-                                <div className="absolute top-1 right-1 flex gap-1 print:hidden">
-                                  {s.needsFront && <div className="w-2 h-2 rounded-full bg-yellow-400" title="Nära tavlan"/>}
-                                  {s.needsWall && <div className="w-2 h-2 rounded-full bg-green-400" title="Vid vägg"/>}
-                                </div>
-                                {isSelected && <div className="absolute -top-3 bg-blue-600 text-white text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1"><Move size={10}/> Flytta</div>}
-                              </>
-                            ) : <span className="text-gray-300 text-xs print:hidden">Tom</span>}
+                            {isDesignMode ? (
+                                // DESIGN MODE CONTENT
+                                isSeat ? <Armchair size={16} className="text-indigo-300"/> : <X size={16} className="text-gray-300"/>
+                            ) : (
+                                // PLACEMENT MODE CONTENT
+                                isSeat && (
+                                    s ? (
+                                        <>
+                                            <span className="font-bold text-sm leading-tight px-1 break-words w-full">{s.name}</span>
+                                            <div className="absolute top-1 right-1 flex gap-1 print:hidden">
+                                                {s.needsFront && <div className="w-1.5 h-1.5 rounded-full bg-yellow-400" />}
+                                                {s.needsWall && <div className="w-1.5 h-1.5 rounded-full bg-green-400" />}
+                                            </div>
+                                            {isSelected && <div className="absolute -top-2 bg-blue-600 text-white text-[9px] px-2 py-0.5 rounded-full flex items-center gap-1"><Move size={8}/> Flytta</div>}
+                                        </>
+                                    ) : <span className="text-gray-300 text-[10px] print:hidden">Ledigt</span>
+                                )
+                            )}
                           </div>
                         );
                       })}
                     </div>
-                    <div className="mt-8 flex gap-4 justify-center items-end bg-white p-4 rounded-xl border print:hidden">
-                      <div className="flex-grow max-w-xs"><label className="text-xs text-gray-500 ml-1">Spara som:</label><Input placeholder="Vecka 42..." value={planName} onChange={e => setPlanName(e.target.value)}/></div>
-                      <Button variant="secondary" onClick={saveCurrentPlan} disabled={!currentPlan.length}><Save size={18}/> Spara</Button>
-                    </div>
-                  </div>
-                )}
+                    
+                    {!isDesignMode && (
+                        <div className="mt-8 flex gap-4 justify-center items-end bg-white p-4 rounded-xl border print:hidden">
+                        <div className="flex-grow max-w-xs"><label className="text-xs text-gray-500 ml-1">Spara som:</label><Input placeholder="Vecka 42..." value={planName} onChange={e => setPlanName(e.target.value)}/></div>
+                        <Button variant="secondary" onClick={saveCurrentPlan} disabled={!currentPlan.some(s => s !== null)}><Save size={18}/> Spara</Button>
+                        </div>
+                    )}
+                </div>
               </>
             )}
           </div>
