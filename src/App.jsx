@@ -1341,7 +1341,7 @@ export default function App() {
                             } else {
                                 cellClass += "cursor-pointer ";
                                 if (isSelected) cellClass += "border-blue-500 ring-2 ring-blue-200 bg-blue-50 z-10 scale-105 shadow-md ";
-                                else if (isLocked) cellClass += "bg-purple-50 border-purple-300 shadow-sm ring-1 ring-purple-200 ";
+                                else if (isLocked) cellClass += "bg-purple-50 border-purple-300 shadow-sm ring-1 ring-purple-200 print:bg-white print:border-gray-200 print:shadow-none print:ring-0 ";
                                 else if (s) cellClass += "bg-white border-blue-100 shadow-sm hover:border-blue-300 ";
                                 else cellClass += "bg-gray-50 border-gray-200 border-dashed hover:bg-gray-100 "; // Empty Seat
                             }
