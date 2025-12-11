@@ -32,11 +32,15 @@ import {
   Columns,
   Maximize,
   MousePointer2,
-  RotateCcw
+  RotateCcw,
+  Lock,
+  Unlock,
+  Link,
+  Ban
 } from 'lucide-react';
 
 // --- LocalStorage Helper ---
-const STORAGE_KEY = 'classroom_seating_data_v4'; 
+const STORAGE_KEY = 'classroom_seating_data_v6'; // Uppdaterad version för nya regler
 
 const saveToLocal = (data) => {
   try {
@@ -218,6 +222,7 @@ export default function App() {
 
   const [constraintStudent1, setConstraintStudent1] = useState('');
   const [constraintStudent2, setConstraintStudent2] = useState('');
+  const [constraintType, setConstraintType] = useState('avoid'); // 'avoid' | 'pair'
 
   // Layout State
   const DEFAULT_ROWS = 10;
@@ -227,6 +232,7 @@ export default function App() {
   const [cols, setCols] = useState(DEFAULT_COLS);
   const [currentPlan, setCurrentPlan] = useState([]); 
   const [currentSeatMap, setCurrentSeatMap] = useState([]); 
+  const [lockedIndices, setLockedIndices] = useState(new Set()); // New State for Locked Seats
   const [planName, setPlanName] = useState('');
   
   // Design Mode
@@ -263,15 +269,14 @@ export default function App() {
 
     if (active) {
       setCurrentPlan(active.layout || Array(r * c).fill(null));
-      // Om ingen seatMap finns, anta att det är tomt (false) så användaren får bygga
       setCurrentSeatMap(active.seatMap || Array(r * c).fill(false));
+      setLockedIndices(new Set(active.locked || []));
       setGenerationMsg(""); 
     } else {
-      // New Class: Start Empty
       setCurrentPlan(Array(r * c).fill(null));
       setCurrentSeatMap(Array(r * c).fill(false)); 
+      setLockedIndices(new Set());
       setGenerationMsg("");
-      // Auto-enable design mode for new classes to guide user
       setIsDesignMode(true);
     }
   }, [currentClassId, data.activePlans]);
@@ -400,7 +405,7 @@ export default function App() {
       classId: currentClassId,
       student1: constraintStudent1,
       student2: constraintStudent2,
-      type: 'avoid'
+      type: constraintType
     };
     setData(prev => ({ ...prev, constraints: [...prev.constraints, newConstraint] }));
     setConstraintStudent1('');
@@ -423,6 +428,7 @@ export default function App() {
       cols,
       layout: currentPlan,
       seatMap: currentSeatMap,
+      locked: Array.from(lockedIndices), // Save locks too
       createdAt: Date.now()
     };
     setData(prev => ({ ...prev, plans: [newPlan, ...prev.plans] }));
@@ -439,6 +445,7 @@ export default function App() {
     setCols(plan.cols);
     setCurrentPlan(plan.layout);
     setCurrentSeatMap(plan.seatMap || Array(plan.rows * plan.cols).fill(true));
+    setLockedIndices(new Set(plan.locked || []));
     
     setData(prev => ({
         ...prev,
@@ -447,6 +454,7 @@ export default function App() {
             [plan.classId]: { 
               layout: plan.layout, 
               seatMap: plan.seatMap || Array(plan.rows * plan.cols).fill(true), 
+              locked: plan.locked || [],
               rows: plan.rows, 
               cols: plan.cols 
             }
@@ -458,18 +466,18 @@ export default function App() {
   // --- GRID RESIZING ---
   const updateGridSize = (newRows, newCols) => {
     const newSize = newRows * newCols;
-    const newSeatMap = Array(newSize).fill(false); // Default to empty when resizing
+    const newSeatMap = Array(newSize).fill(false);
     const newLayout = Array(newSize).fill(null);
+    const newLocked = new Set();
 
-    // Copy old data
     for(let r=0; r<Math.min(rows, newRows); r++) {
       for(let c=0; c<Math.min(cols, newCols); c++) {
         const oldIdx = r * cols + c;
         const newIdx = r * newCols + c;
-        // Safety check
         if (oldIdx < currentSeatMap.length) {
             newSeatMap[newIdx] = currentSeatMap[oldIdx];
             newLayout[newIdx] = currentPlan[oldIdx];
+            if (lockedIndices.has(oldIdx)) newLocked.add(newIdx);
         }
       }
     }
@@ -478,12 +486,19 @@ export default function App() {
     setCols(newCols);
     setCurrentSeatMap(newSeatMap);
     setCurrentPlan(newLayout);
+    setLockedIndices(newLocked);
     
     setData(prev => ({
         ...prev,
         activePlans: {
             ...prev.activePlans,
-            [currentClassId]: { layout: newLayout, seatMap: newSeatMap, rows: newRows, cols: newCols }
+            [currentClassId]: { 
+                layout: newLayout, 
+                seatMap: newSeatMap, 
+                locked: Array.from(newLocked),
+                rows: newRows, 
+                cols: newCols 
+            }
         }
     }));
   };
@@ -496,16 +511,13 @@ export default function App() {
     const r = Math.floor(index / safeCols);
     const c = index % safeCols;
 
-    // Create a fresh copy
     let newMap = [...currentSeatMap];
     let newLayout = [...currentPlan];
+    let newLocked = new Set(lockedIndices); 
     
-    // Check integrity
     if (newMap.length !== safeRows * safeCols) {
-        console.warn("Grid size mismatch, resetting map size to match rows/cols");
         const resizedMap = Array(safeRows * safeCols).fill(false);
         const resizedLayout = Array(safeRows * safeCols).fill(null);
-        // Try to salvage
         newMap.forEach((val, i) => { if(i < resizedMap.length) resizedMap[i] = val; });
         newLayout.forEach((val, i) => { if(i < resizedLayout.length) resizedLayout[i] = val; });
         newMap = resizedMap;
@@ -516,7 +528,10 @@ export default function App() {
         if (rr >= 0 && rr < safeRows && cc >= 0 && cc < safeCols) {
             const idx = rr * safeCols + cc;
             newMap[idx] = state;
-            if (!state) newLayout[idx] = null; 
+            if (!state) {
+                newLayout[idx] = null; 
+                newLocked.delete(idx);
+            }
         }
     };
 
@@ -533,46 +548,80 @@ export default function App() {
         setSeat(r + 1, c, true);
         setSeat(r + 1, c + 1, true);
     } else if (designBrush === 'group5') {
-        // 5-group block
         setSeat(r, c, true); setSeat(r, c + 1, true);
         setSeat(r + 1, c, true); setSeat(r + 1, c + 1, true);
         setSeat(r, c + 2, true); 
     } else if (designBrush === 'group6') {
-        // 2x3
         setSeat(r, c, true); setSeat(r, c + 1, true); setSeat(r, c + 2, true);
         setSeat(r + 1, c, true); setSeat(r + 1, c + 1, true); setSeat(r + 1, c + 2, true);
     }
 
     setCurrentSeatMap(newMap);
     setCurrentPlan(newLayout);
+    setLockedIndices(newLocked);
     
-    // Force update to data state
     setData(prev => ({
         ...prev,
         activePlans: {
             ...prev.activePlans,
-            [currentClassId]: { layout: newLayout, seatMap: newMap, rows: safeRows, cols: safeCols }
+            [currentClassId]: { 
+                layout: newLayout, 
+                seatMap: newMap, 
+                locked: Array.from(newLocked),
+                rows: safeRows, 
+                cols: safeCols 
+            }
         }
     }));
   };
 
   const clearRoom = () => {
-      // Removed confirm dialog to fix bug where it might be blocked
       const safeRows = rows || DEFAULT_ROWS;
       const safeCols = cols || DEFAULT_COLS;
       const newMap = Array(safeRows * safeCols).fill(false);
       const newLayout = Array(safeRows * safeCols).fill(null);
+      const newLocked = new Set();
       
       setCurrentSeatMap(newMap);
       setCurrentPlan(newLayout);
+      setLockedIndices(newLocked);
       
       setData(prev => ({
         ...prev,
         activePlans: {
             ...prev.activePlans,
-            [currentClassId]: { layout: newLayout, seatMap: newMap, rows: safeRows, cols: safeCols }
+            [currentClassId]: { 
+                layout: newLayout, 
+                seatMap: newMap, 
+                locked: [],
+                rows: safeRows, 
+                cols: safeCols 
+            }
         }
     }));
+  };
+
+  // --- LOCK FUNCTIONALITY ---
+  const toggleLock = (index, e) => {
+      e.stopPropagation(); 
+      const newLocked = new Set(lockedIndices);
+      if (newLocked.has(index)) {
+          newLocked.delete(index);
+      } else {
+          newLocked.add(index);
+      }
+      setLockedIndices(newLocked);
+      
+      setData(prev => ({
+        ...prev,
+        activePlans: {
+            ...prev.activePlans,
+            [currentClassId]: { 
+                ...prev.activePlans[currentClassId],
+                locked: Array.from(newLocked)
+            }
+        }
+      }));
   };
 
   // --- INTERACTION ---
@@ -580,16 +629,17 @@ export default function App() {
     if (isDesignMode) {
         applyDesignTool(index);
     } else {
-        // Normal Mode
-        if (!currentSeatMap[index]) return; // Can't select empty space
+        if (!currentSeatMap[index]) return; 
 
         if (selectedSeatIndex === null) {
             setSelectedSeatIndex(index);
         } else if (selectedSeatIndex === index) {
             setSelectedSeatIndex(null);
         } else {
+            // Swap
             const newLayout = [...currentPlan];
             const temp = newLayout[selectedSeatIndex];
+            
             newLayout[selectedSeatIndex] = newLayout[index];
             newLayout[index] = temp;
             
@@ -599,14 +649,14 @@ export default function App() {
                 ...prev,
                 activePlans: {
                     ...prev.activePlans,
-                    [currentClassId]: { layout: newLayout, seatMap: currentSeatMap, rows, cols }
+                    [currentClassId]: { ...prev.activePlans[currentClassId], layout: newLayout }
                 }
             }));
         }
     }
   };
 
-  // --- ALGORITHM (Updated to handle empty maps) ---
+  // --- ALGORITHM ---
   const generateSeating = () => {
     const students = getStudents();
     const plans = getPlans();
@@ -646,14 +696,30 @@ export default function App() {
         }
       });
 
-      // 2. Clear Grid
+      // 2. Prepare Grid (Handle Locks First)
       let grid = Array(rows * cols).fill(null);
-      let pool = [...students].sort(() => Math.random() - 0.5);
-      const takenIndices = new Set();
+      let takenIndices = new Set();
+      let pool = [...students]; 
+
+      // 2a. Place Locked Students
+      lockedIndices.forEach(idx => {
+          if (currentSeatMap[idx] && currentPlan[idx]) {
+              const studentId = currentPlan[idx].id;
+              const studentIndex = pool.findIndex(s => s.id === studentId);
+              
+              if (studentIndex !== -1) {
+                  grid[idx] = pool[studentIndex];
+                  takenIndices.add(idx);
+                  pool.splice(studentIndex, 1); 
+              }
+          }
+      });
+
+      // Shuffle remaining pool
+      pool = pool.sort(() => Math.random() - 0.5);
 
       // 3. Placement Logic (Front to Back)
       const placeStudentAtFirstAvailable = (student, criteriaFn = () => true) => {
-        // ValidIndices is naturally sorted 0->N (Top-Left to Bottom-Right)
         const spot = validIndices.find(idx => !takenIndices.has(idx) && criteriaFn(idx));
         if (spot !== undefined) {
           grid[spot] = student;
@@ -694,12 +760,15 @@ export default function App() {
       let bestGrid = [...grid];
       let bestScore = calculateScore(bestGrid, pastPairs, constraints);
 
+      // Only swap if BOTH seats are NOT locked
       for (let i = 0; i < 3000; i++) { 
         const r1 = Math.floor(Math.random() * validIndices.length);
         const r2 = Math.floor(Math.random() * validIndices.length);
         const idx1 = validIndices[r1];
         const idx2 = validIndices[r2];
+        
         if (idx1 === idx2) continue;
+        if (lockedIndices.has(idx1) || lockedIndices.has(idx2)) continue;
 
         const s1 = grid[idx1];
         const s2 = grid[idx2];
@@ -725,14 +794,14 @@ export default function App() {
         ...prev,
         activePlans: {
             ...prev.activePlans,
-            [currentClassId]: { layout: bestGrid, seatMap: currentSeatMap, rows, cols }
+            [currentClassId]: { ...prev.activePlans[currentClassId], layout: bestGrid }
         }
     }));
       
       const hardConflicts = countHardConflicts(bestGrid, constraints);
       let msg = "Klar!";
+      if (lockedIndices.size > 0) msg += ` (Låste: ${lockedIndices.size})`;
       if (hardConflicts > 0) msg += ` ${hardConflicts} regelbrott.`;
-      else msg += " Inga regelbrott.";
       setGenerationMsg(msg);
       setIsGenerating(false);
     }, 100);
@@ -765,7 +834,11 @@ export default function App() {
     constraints.forEach(c => {
       const idx1 = gridToCheck.findIndex(s => s?.id === c.student1);
       const idx2 = gridToCheck.findIndex(s => s?.id === c.student2);
-      if (idx1 !== -1 && idx2 !== -1 && areNeighbors(idx1, idx2)) score += 5000; 
+      if (idx1 !== -1 && idx2 !== -1) {
+          const neighbors = areNeighbors(idx1, idx2);
+          if (c.type === 'pair' && !neighbors) score += 5000; // Must sit together
+          if ((c.type === 'avoid' || !c.type) && neighbors) score += 5000; // Must avoid
+      }
     });
 
     for (let i = 0; i < gridToCheck.length; i++) {
@@ -773,7 +846,7 @@ export default function App() {
       const r = Math.floor(i / cols);
       const c = i % cols;
 
-      score += r * 20; // Back row penalty
+      score += r * 20; 
 
       let neighborCount = 0;
       if (c < cols - 1 && currentSeatMap[i+1] && gridToCheck[i+1]) neighborCount++;
@@ -781,9 +854,8 @@ export default function App() {
       if (r < rows - 1 && currentSeatMap[i+cols] && gridToCheck[i+cols]) neighborCount++;
       if (r > 0 && currentSeatMap[i-cols] && gridToCheck[i-cols]) neighborCount++;
 
-      if (neighborCount === 0) score += 500; // Isolation penalty
+      if (neighborCount === 0) score += 500; 
 
-      // History penalty
       if (c < cols - 1) {
           const neighborIdx = i + 1;
           if (currentSeatMap[neighborIdx] && gridToCheck[neighborIdx]) {
@@ -800,7 +872,11 @@ export default function App() {
     constraints.forEach(c => {
       const idx1 = grid.findIndex(s => s?.id === c.student1);
       const idx2 = grid.findIndex(s => s?.id === c.student2);
-      if (idx1 !== -1 && idx2 !== -1 && areNeighbors(idx1, idx2)) count++;
+      if (idx1 !== -1 && idx2 !== -1) {
+          const neighbors = areNeighbors(idx1, idx2);
+          if (c.type === 'pair' && !neighbors) count++;
+          if ((c.type === 'avoid' || !c.type) && neighbors) count++;
+      }
     });
     return count;
   };
@@ -1056,18 +1132,37 @@ export default function App() {
              {!currentClassId ? <div className="text-center py-10 text-gray-500">Välj en klass först.</div> : (
                <>
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                  <h3 className="font-semibold mb-4 flex gap-2"><ShieldAlert size={20} className="text-orange-600"/> Skapa regel (Ska ej sitta bredvid)</h3>
-                  <div className="flex flex-col md:flex-row gap-4 items-center">
-                    <select className="flex-1 p-2 border rounded-lg" value={constraintStudent1} onChange={e => setConstraintStudent1(e.target.value)}>
-                      <option value="">Elev 1</option>
-                      {getStudents().map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
-                    <ArrowRight className="text-gray-400 hidden md:block" />
-                    <select className="flex-1 p-2 border rounded-lg" value={constraintStudent2} onChange={e => setConstraintStudent2(e.target.value)}>
-                      <option value="">Elev 2</option>
-                      {getStudents().filter(s => s.id !== constraintStudent1).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
-                    <Button onClick={addConstraint} disabled={!constraintStudent1 || !constraintStudent2}>Spara</Button>
+                  <h3 className="font-semibold mb-4 flex gap-2"><ShieldAlert size={20} className="text-orange-600"/> Hantera regler</h3>
+                  <div className="flex flex-col gap-4">
+                    
+                    {/* Rule Type Toggle */}
+                    <div className="flex bg-gray-100 p-1 rounded-lg w-fit">
+                        <button 
+                            onClick={() => setConstraintType('avoid')} 
+                            className={`px-4 py-2 text-sm font-medium rounded-md transition-all flex items-center gap-2 ${constraintType === 'avoid' ? 'bg-white text-orange-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                        >
+                            <Ban size={16} /> Får ej sitta bredvid
+                        </button>
+                        <button 
+                            onClick={() => setConstraintType('pair')} 
+                            className={`px-4 py-2 text-sm font-medium rounded-md transition-all flex items-center gap-2 ${constraintType === 'pair' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                        >
+                            <Link size={16} /> Ska sitta bredvid
+                        </button>
+                    </div>
+
+                    <div className="flex flex-col md:flex-row gap-4 items-center">
+                        <select className="flex-1 p-2 border rounded-lg w-full" value={constraintStudent1} onChange={e => setConstraintStudent1(e.target.value)}>
+                        <option value="">Elev 1</option>
+                        {getStudents().map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        </select>
+                        <ArrowRight className="text-gray-400 hidden md:block" />
+                        <select className="flex-1 p-2 border rounded-lg w-full" value={constraintStudent2} onChange={e => setConstraintStudent2(e.target.value)}>
+                        <option value="">Elev 2</option>
+                        {getStudents().filter(s => s.id !== constraintStudent1).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        </select>
+                        <Button onClick={addConstraint} disabled={!constraintStudent1 || !constraintStudent2}>Spara regel</Button>
+                    </div>
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -1075,10 +1170,16 @@ export default function App() {
                     const s1 = getStudents().find(s => s.id === c.student1);
                     const s2 = getStudents().find(s => s.id === c.student2);
                     if(!s1 || !s2) return null;
+                    
+                    const isPair = c.type === 'pair';
+
                     return (
-                      <div key={c.id} className="bg-orange-50 p-3 rounded-lg border border-orange-100 flex justify-between items-center text-orange-900">
-                        <span className="text-sm"><b>{s1.name}</b> får ej sitta med <b>{s2.name}</b></span>
-                        <button onClick={() => removeConstraint(c.id)} className="text-orange-400 hover:text-orange-700"><UserMinus size={18}/></button>
+                      <div key={c.id} className={`p-3 rounded-lg border flex justify-between items-center ${isPair ? 'bg-green-50 border-green-200 text-green-900' : 'bg-orange-50 border-orange-100 text-orange-900'}`}>
+                        <span className="text-sm flex items-center gap-2">
+                            {isPair ? <Link size={16}/> : <Ban size={16}/>}
+                            <b>{s1.name}</b> {isPair ? 'ska sitta med' : 'får ej sitta med'} <b>{s2.name}</b>
+                        </span>
+                        <button onClick={() => removeConstraint(c.id)} className={`${isPair ? 'text-green-400 hover:text-green-700' : 'text-orange-400 hover:text-orange-700'}`}><UserMinus size={18}/></button>
                       </div>
                     )
                   })}
@@ -1198,7 +1299,10 @@ export default function App() {
                 {generationMsg && !isDesignMode && <div className={`text-sm text-center px-4 py-2 rounded-lg print:hidden ${generationMsg.includes("Klar") ? 'bg-green-100 text-green-800' : 'bg-blue-50'}`}>{generationMsg}</div>}
                 
                 {currentPlan.length > 0 && selectedSeatIndex === null && !isDesignMode && (
-                   <p className="text-center text-xs text-gray-400 print:hidden italic mb-2">💡 Tips: Klicka på en elev och sedan på en annan plats för att byta plats.</p>
+                   <div className="print:hidden">
+                       <p className="text-center text-xs text-gray-400 italic mb-1">💡 Tips: Klicka på en elev och sedan på en annan plats för att byta plats.</p>
+                       <p className="text-center text-xs text-gray-400 italic mb-2">🔒 Tips: Använd hänglåset på en elev för att låsa fast dem vid nästa generering.</p>
+                   </div>
                 )}
 
                 {/* VISUAL GRID */}
@@ -1216,6 +1320,7 @@ export default function App() {
                         const s = currentPlan[idx];
                         const isSeat = currentSeatMap[idx];
                         const isSelected = selectedSeatIndex === idx;
+                        const isLocked = lockedIndices.has(idx);
 
                         // Visual styling based on state
                         let cellClass = "h-16 sm:h-20 rounded-lg border flex flex-col items-center justify-center text-center relative transition-all ";
@@ -1236,6 +1341,7 @@ export default function App() {
                             } else {
                                 cellClass += "cursor-pointer ";
                                 if (isSelected) cellClass += "border-blue-500 ring-2 ring-blue-200 bg-blue-50 z-10 scale-105 shadow-md ";
+                                else if (isLocked) cellClass += "bg-purple-50 border-purple-300 shadow-sm ring-1 ring-purple-200 ";
                                 else if (s) cellClass += "bg-white border-blue-100 shadow-sm hover:border-blue-300 ";
                                 else cellClass += "bg-gray-50 border-gray-200 border-dashed hover:bg-gray-100 "; // Empty Seat
                             }
@@ -1267,6 +1373,16 @@ export default function App() {
                                                 {s.needsFront && <div className="w-1.5 h-1.5 rounded-full bg-yellow-400" title="Nära tavlan"/>}
                                                 {s.needsWall && <div className="w-1.5 h-1.5 rounded-full bg-green-400" title="Vid vägg"/>}
                                             </div>
+                                            
+                                            {/* Lock Button */}
+                                            <button 
+                                                onClick={(e) => toggleLock(idx, e)}
+                                                className={`absolute bottom-1 right-1 p-1 rounded-full hover:bg-gray-100 transition-colors print:hidden ${isLocked ? 'text-purple-600' : 'text-gray-300 hover:text-gray-500'}`}
+                                                title={isLocked ? "Lås upp" : "Lås fast elev"}
+                                            >
+                                                {isLocked ? <Lock size={12} fill="currentColor" /> : <Unlock size={12} />}
+                                            </button>
+
                                             {isSelected && <div className="absolute -top-2 bg-blue-600 text-white text-[9px] px-2 py-0.5 rounded-full flex items-center gap-1"><Move size={8}/> Flytta</div>}
                                         </>
                                     ) : <span className="text-gray-300 text-[10px] print:hidden">Ledigt</span>
