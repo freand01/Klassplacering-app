@@ -36,11 +36,13 @@ import {
   Lock,
   Unlock,
   Link,
-  Ban
+  Ban,
+  FilePlus,
+  Layout
 } from 'lucide-react';
 
 // --- LocalStorage Helper ---
-const STORAGE_KEY = 'classroom_seating_data_v6'; // Uppdaterad version för nya regler
+const STORAGE_KEY = 'classroom_seating_data_v7'; // Uppdaterad version för layouter
 
 const saveToLocal = (data) => {
   try {
@@ -197,6 +199,7 @@ export default function App() {
     students: [],
     constraints: [],
     plans: [],
+    roomLayouts: [], // New: Store saved layouts
     activePlans: {} 
   });
 
@@ -222,7 +225,7 @@ export default function App() {
 
   const [constraintStudent1, setConstraintStudent1] = useState('');
   const [constraintStudent2, setConstraintStudent2] = useState('');
-  const [constraintType, setConstraintType] = useState('avoid'); // 'avoid' | 'pair'
+  const [constraintType, setConstraintType] = useState('avoid');
 
   // Layout State
   const DEFAULT_ROWS = 10;
@@ -232,13 +235,14 @@ export default function App() {
   const [cols, setCols] = useState(DEFAULT_COLS);
   const [currentPlan, setCurrentPlan] = useState([]); 
   const [currentSeatMap, setCurrentSeatMap] = useState([]); 
-  const [lockedIndices, setLockedIndices] = useState(new Set()); // New State for Locked Seats
+  const [lockedIndices, setLockedIndices] = useState(new Set()); 
   const [planName, setPlanName] = useState('');
   
   // Design Mode
   const [isDesignMode, setIsDesignMode] = useState(false); 
   const [designBrush, setDesignBrush] = useState('single'); 
   const [showGridSettings, setShowGridSettings] = useState(false);
+  const [layoutName, setLayoutName] = useState(''); // Name for saving layout template
 
   // Loading/Gen State
   const [isGenerating, setIsGenerating] = useState(false);
@@ -248,7 +252,7 @@ export default function App() {
   useEffect(() => {
     const localData = loadFromLocal();
     if (localData) {
-      setData({ ...localData, activePlans: localData.activePlans || {} });
+      setData({ ...localData, activePlans: localData.activePlans || {}, roomLayouts: localData.roomLayouts || [] });
       if (localData.classes.length > 0) {
         setCurrentClassId(localData.classes[0].id);
       }
@@ -295,6 +299,7 @@ export default function App() {
     return data.constraints.filter(c => classStudentIds.has(c.student1) && classStudentIds.has(c.student2));
   };
   const getPlans = () => data.plans.filter(p => p.classId === currentClassId).sort((a,b) => b.createdAt - a.createdAt);
+  const getRoomLayouts = () => data.roomLayouts.filter(l => l.classId === currentClassId);
 
   // --- Actions ---
 
@@ -314,6 +319,7 @@ export default function App() {
       students: prev.students.filter(s => s.classId !== id),
       constraints: prev.constraints.filter(c => c.classId !== id),
       plans: prev.plans.filter(p => p.classId !== id),
+      roomLayouts: prev.roomLayouts.filter(l => l.classId !== id),
       activePlans: remainingActivePlans
     }));
     if (currentClassId === id) setCurrentClassId('');
@@ -414,6 +420,76 @@ export default function App() {
 
   const removeConstraint = (id) => {
     setData(prev => ({ ...prev, constraints: prev.constraints.filter(c => c.id !== id) }));
+  };
+
+  // --- Room Layout Actions ---
+  const saveRoomLayout = () => {
+    if (!layoutName.trim()) {
+        alert("Ange ett namn på möbleringen.");
+        return;
+    }
+    const newLayout = {
+        id: crypto.randomUUID(),
+        classId: currentClassId,
+        name: layoutName.trim(),
+        rows: rows,
+        cols: cols,
+        seatMap: currentSeatMap,
+        locked: Array.from(lockedIndices), // Save locks with the layout template? Yes, good for "Exam" where you always lock specific seats
+        createdAt: Date.now()
+    };
+    
+    setData(prev => ({
+        ...prev,
+        roomLayouts: [...(prev.roomLayouts || []), newLayout]
+    }));
+    setLayoutName('');
+  };
+
+  const loadRoomLayout = (layoutId) => {
+      const template = data.roomLayouts.find(l => l.id === layoutId);
+      if (!template) return;
+
+      // REMOVED confirm() dialogue here as it blocks execution in some environments
+      // if (!confirm(`Vill du ladda "${template.name}"? Nuvarande möblering ersätts.`)) return;
+
+      const newRows = template.rows;
+      const newCols = template.cols;
+      const newSeatMap = template.seatMap;
+      const newLocked = new Set(template.locked || []);
+
+      // CLEAR STUDENTS on layout change (User Request)
+      // Instead of migrating, we clear the plan to avoid confusion.
+      const newPlan = Array(newRows * newCols).fill(null);
+      
+      setRows(newRows);
+      setCols(newCols);
+      setCurrentSeatMap(newSeatMap);
+      setCurrentPlan(newPlan);
+      setLockedIndices(newLocked);
+
+      // Save as active
+      setData(prev => ({
+        ...prev,
+        activePlans: {
+            ...prev.activePlans,
+            [currentClassId]: { 
+                layout: newPlan, 
+                seatMap: newSeatMap, 
+                locked: Array.from(newLocked),
+                rows: newRows, 
+                cols: newCols 
+            }
+        }
+      }));
+  };
+
+  const deleteRoomLayout = (layoutId) => {
+      // Removed confirm here as well for consistency and stability
+      setData(prev => ({
+          ...prev,
+          roomLayouts: prev.roomLayouts.filter(l => l.id !== layoutId)
+      }));
   };
 
   // --- Plan Actions ---
@@ -1291,6 +1367,54 @@ export default function App() {
                                         <RotateCcw size={12}/> Rensa rummet
                                     </button>
                                 </div>
+                             </div>
+
+                             {/* --- NEW SECTION: ROOM TEMPLATES --- */}
+                             <div className="mt-2 border-t border-indigo-200 pt-3">
+                                <h4 className="text-xs font-bold text-indigo-900 uppercase tracking-wider mb-2 flex items-center gap-1">
+                                    <Layout size={14}/> Möbleringsmallar
+                                </h4>
+                                <div className="flex flex-wrap gap-2 items-end">
+                                    <div className="flex-1 min-w-[200px]">
+                                        <select 
+                                            className="w-full p-2 text-sm border border-indigo-200 rounded-lg text-gray-700 focus:ring-2 focus:ring-indigo-500"
+                                            onChange={(e) => { if(e.target.value) loadRoomLayout(e.target.value); }}
+                                            value=""
+                                        >
+                                            <option value="" disabled>Ladda sparad mall...</option>
+                                            {getRoomLayouts().map(l => (
+                                                <option key={l.id} value={l.id}>{l.name}</option>
+                                            ))}
+                                            {getRoomLayouts().length === 0 && <option disabled>(Inga mallar sparade än)</option>}
+                                        </select>
+                                    </div>
+                                    <div className="flex gap-2 flex-grow">
+                                        <input 
+                                            type="text" 
+                                            placeholder="Namn (t.ex. Provsittning)..." 
+                                            className="p-2 text-sm border border-indigo-200 rounded-lg flex-grow min-w-[150px]"
+                                            value={layoutName}
+                                            onChange={e => setLayoutName(e.target.value)}
+                                        />
+                                        <button 
+                                            onClick={saveRoomLayout}
+                                            disabled={!layoutName.trim()}
+                                            className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700 disabled:bg-indigo-300 flex items-center gap-2 whitespace-nowrap"
+                                        >
+                                            <FilePlus size={16}/> Spara möblering
+                                        </button>
+                                    </div>
+                                </div>
+                                {getRoomLayouts().length > 0 && (
+                                    <div className="flex flex-wrap gap-2 mt-2">
+                                        {getRoomLayouts().map(l => (
+                                            <div key={l.id} className="text-xs bg-white border border-indigo-100 rounded px-2 py-1 flex items-center gap-2 text-indigo-800">
+                                                {l.name}
+                                                <button onClick={() => deleteRoomLayout(l.id)} className="text-indigo-300 hover:text-red-500"><X size={12}/></button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                              </div>
                         </div>
                     )}
