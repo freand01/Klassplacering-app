@@ -87,9 +87,14 @@ const StudentsTab = ({
 
   if (!currentClassId) {
     return (
-      <div className="text-center py-12 bg-white rounded-xl border border-dashed border-gray-300">
-        <GraduationCap size={48} className="mx-auto text-gray-300 mb-4" />
-        <h3 className="text-lg font-medium text-gray-900">Välj en klass</h3>
+      <div className="text-center py-16 bg-gradient-to-br from-white to-gray-50 rounded-2xl border-2 border-dashed border-gray-300 animate-fade-in">
+        <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-br from-indigo-100 to-purple-100 rounded-2xl flex items-center justify-center">
+          <GraduationCap size={40} className="text-indigo-600" />
+        </div>
+        <h3 className="text-xl font-bold text-gray-900 mb-2">Välj eller skapa en klass</h3>
+        <p className="text-sm text-gray-500 max-w-md mx-auto">
+          Börja med att välja en befintlig klass eller skapa en ny klass högst upp på sidan.
+        </p>
       </div>
     );
   }
@@ -97,29 +102,29 @@ const StudentsTab = ({
   return (
     <div className="space-y-6 print:hidden">
       {!isBulkMode ? (
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="font-semibold flex gap-2">
-              <Users size={20} className="text-blue-600" /> Lägg till elev
+        <div className="bg-white p-6 rounded-2xl shadow-md border border-gray-100 animate-slide-in-up">
+          <div className="flex justify-between items-center mb-5">
+            <h3 className="text-lg font-bold flex gap-2 items-center bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
+              <Users size={22} className="text-indigo-600" /> Lägg till elev
             </h3>
             <div className="flex gap-4 items-center">
               <button
                 onClick={() => setIsBulkMode(true)}
-                className="text-sm text-blue-600 font-medium flex items-center gap-1 hover:underline"
+                className="text-sm text-indigo-600 font-semibold flex items-center gap-1 hover:text-indigo-700 transition-colors active-press"
               >
                 <ListPlus size={16} /> Lägg till flera...
               </button>
               <div className="h-4 w-[1px] bg-gray-300"></div>
               <button
                 onClick={onShowPasteModal}
-                className="text-sm text-blue-600 font-medium flex items-center gap-1 hover:underline"
+                className="text-sm text-indigo-600 font-semibold flex items-center gap-1 hover:text-indigo-700 transition-colors active-press"
               >
                 <ClipboardList size={16} /> Klistra in lista
               </button>
               <div className="h-4 w-[1px] bg-gray-300"></div>
               <button
                 onClick={() => onDeleteClass(currentClassId)}
-                className="text-xs text-red-400 underline hover:text-red-600"
+                className="text-xs text-red-400 font-medium hover:text-red-600 transition-colors"
               >
                 Ta bort klass
               </button>
@@ -230,26 +235,35 @@ const StudentsTab = ({
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-        {getStudents().map(s => (
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+        {getStudents().map((s, index) => (
           <div
             key={s.id}
             onClick={() => onEditStudent(s)}
-            className="bg-white p-3 rounded-lg border flex justify-between items-center cursor-pointer hover:border-blue-300 hover:shadow-sm transition-all group"
+            style={{ animationDelay: `${index * 30}ms` }}
+            className="bg-white p-4 rounded-xl border-2 border-gray-100 flex justify-between items-center cursor-pointer hover:border-indigo-300 hover:shadow-lg transition-all duration-200 group animate-scale-in active-press"
           >
             <div>
-              <div className="font-medium group-hover:text-blue-700 flex items-center gap-2">
+              <div className="font-semibold text-gray-800 group-hover:text-indigo-700 flex items-center gap-2 transition-colors">
                 {s.name}
-                <Edit2 size={12} className="opacity-0 group-hover:opacity-100 text-gray-400" aria-hidden="true" />
+                <Edit2 size={13} className="opacity-0 group-hover:opacity-100 text-indigo-400" aria-hidden="true" />
               </div>
-              <div className="flex gap-1 mt-1">
-                {s.needsFront && <span className="text-[10px] bg-yellow-100 text-yellow-800 px-1 rounded">Tavla</span>}
-                {s.needsWall && <span className="text-[10px] bg-green-100 text-green-800 px-1 rounded">Vägg</span>}
+              <div className="flex gap-2 mt-2">
+                {s.needsFront && (
+                  <span className="text-[10px] font-semibold bg-gradient-to-r from-yellow-100 to-amber-100 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200">
+                    Tavla
+                  </span>
+                )}
+                {s.needsWall && (
+                  <span className="text-[10px] font-semibold bg-gradient-to-r from-green-100 to-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-200">
+                    Vägg
+                  </span>
+                )}
               </div>
             </div>
             <button
               onClick={(e) => { e.stopPropagation(); removeStudent(s.id); }}
-              className="text-gray-400 hover:text-red-500 p-2"
+              className="text-gray-300 hover:text-red-500 hover:scale-110 p-2 transition-all duration-200 rounded-lg hover:bg-red-50"
               aria-label={`Ta bort ${s.name}`}
             >
               <UserMinus size={18} />
@@ -257,7 +271,24 @@ const StudentsTab = ({
           </div>
         ))}
         {getStudents().length === 0 && (
-          <div className="col-span-full text-center text-gray-400 py-4">Inga elever än.</div>
+          <div className="col-span-full text-center py-12 bg-gradient-to-br from-gray-50 to-white rounded-2xl border-2 border-dashed border-gray-200">
+            <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-full flex items-center justify-center">
+              <Users size={32} className="text-indigo-600" />
+            </div>
+            <h4 className="text-lg font-semibold text-gray-800 mb-2">Inga elever än</h4>
+            <p className="text-sm text-gray-500 mb-4">Lägg till din första elev med formuläret ovan</p>
+            <div className="flex items-center justify-center gap-3 text-xs text-gray-400">
+              <span className="flex items-center gap-1">
+                <ClipboardList size={14} />
+                Klistra in lista
+              </span>
+              <span>eller</span>
+              <span className="flex items-center gap-1">
+                <ListPlus size={14} />
+                Lägg till flera
+              </span>
+            </div>
+          </div>
         )}
       </div>
     </div>

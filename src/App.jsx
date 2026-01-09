@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutGrid, FileJson, FolderOpen, Users, Settings, MapPin, History } from 'lucide-react';
+import { LayoutGrid, FileJson, FolderOpen, Users, Settings, MapPin, History, Sparkles } from 'lucide-react';
 import { AppProvider, useApp, ACTIONS } from './contexts/AppContext';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useNotification } from './hooks/useNotification';
@@ -15,6 +15,7 @@ import ConstraintsTab from './components/tabs/ConstraintsTab';
 import LayoutTab from './components/tabs/LayoutTab';
 import HistoryTab from './components/tabs/HistoryTab';
 import { TAB_IDS } from './utils/constants';
+import './styles/modern.css';
 
 const AppContent = () => {
   const { state, dispatch } = useApp();
@@ -129,27 +130,33 @@ const AppContent = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-800 font-sans pb-10 print:bg-white print:pb-0">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/30 text-gray-800 font-sans pb-10 print:bg-white print:pb-0 animate-fade-in">
       {/* MODALS */}
       {editingStudent && (
-        <EditStudentModal
-          student={editingStudent}
-          onClose={() => setEditingStudent(null)}
-          onSave={updateStudent}
-        />
+        <div className="animate-scale-in">
+          <EditStudentModal
+            student={editingStudent}
+            onClose={() => setEditingStudent(null)}
+            onSave={updateStudent}
+          />
+        </div>
       )}
       {showPasteModal && (
-        <PasteImportModal
-          onClose={() => setShowPasteModal(false)}
-          onImport={handlePasteImport}
-        />
+        <div className="animate-scale-in">
+          <PasteImportModal
+            onClose={() => setShowPasteModal(false)}
+            onImport={handlePasteImport}
+          />
+        </div>
       )}
       {confirmDialog && (
-        <ConfirmDialog
-          message={confirmDialog.message}
-          onConfirm={confirmDialog.onConfirm}
-          onCancel={confirmDialog.onCancel}
-        />
+        <div className="animate-scale-in">
+          <ConfirmDialog
+            message={confirmDialog.message}
+            onConfirm={confirmDialog.onConfirm}
+            onCancel={confirmDialog.onCancel}
+          />
+        </div>
       )}
       {notification && (
         <Toast
@@ -160,57 +167,70 @@ const AppContent = () => {
       )}
 
       {/* HEADER */}
-      <header className="bg-white sticky top-0 z-10 shadow-sm print:hidden">
-        <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between border-b border-gray-100">
-          <div className="flex items-center gap-2">
-            <LayoutGrid className="text-blue-600" aria-hidden="true" />
-            <h1 className="text-xl font-bold tracking-tight">KlassPlacering</h1>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              className="text-xs px-2"
-              onClick={handleExportData}
-              ariaLabel="Spara projekt som JSON-fil"
-            >
-              <FileJson size={14} /> Spara
-            </Button>
-            <label className="cursor-pointer">
-              <input
-                type="file"
-                onChange={handleImportData}
-                accept=".json"
-                className="hidden"
-                aria-label="Öppna projekt från fil"
-              />
-              <div className="px-3 py-2 border border-gray-300 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 bg-white text-gray-700 hover:bg-gray-50 text-xs h-full">
-                <FolderOpen size={14} /> Öppna
+      <header className="sticky top-0 z-10 print:hidden backdrop-blur-lg bg-white/80 border-b border-white/20 shadow-lg shadow-gray-900/5">
+        <div className="gradient-header">
+          <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+            <div className="flex items-center gap-3 animate-slide-in-right">
+              <div className="p-2 bg-white/20 rounded-xl backdrop-blur-sm">
+                <LayoutGrid className="text-white" size={24} aria-hidden="true" />
               </div>
-            </label>
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+                  KlassPlacering
+                  <Sparkles className="text-yellow-300" size={18} />
+                </h1>
+                <p className="text-xs text-white/80">Modern klassrumsplacering</p>
+              </div>
+            </div>
+            <div className="flex gap-2 animate-slide-in-right">
+              <Button
+                variant="outline"
+                className="text-sm px-4 bg-white/20 backdrop-blur-sm border-white/30 text-white hover:bg-white/30 active-press"
+                onClick={handleExportData}
+                ariaLabel="Spara projekt som JSON-fil"
+              >
+                <FileJson size={16} /> Spara
+              </Button>
+              <label className="cursor-pointer">
+                <input
+                  type="file"
+                  onChange={handleImportData}
+                  accept=".json"
+                  className="hidden"
+                  aria-label="Öppna projekt från fil"
+                />
+                <div className="px-4 py-2 bg-white/20 backdrop-blur-sm border border-white/30 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 text-white hover:bg-white/30 text-sm active-press">
+                  <FolderOpen size={16} /> Öppna
+                </div>
+              </label>
+            </div>
           </div>
         </div>
 
         <ClassSelector showNotification={showNotification} />
 
-        <div className="max-w-5xl mx-auto px-4 flex gap-1 overflow-x-auto mt-2">
-          {tabs.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`
-                flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap
-                ${activeTab === tab.id
-                  ? 'border-blue-600 text-blue-600 bg-blue-50/50'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'}
-              `}
-              role="tab"
-              aria-selected={activeTab === tab.id}
-              aria-label={tab.label}
-            >
-              <tab.icon size={16} aria-hidden="true" />
-              {tab.label}
-            </button>
-          ))}
+        <div className="bg-white/80 backdrop-blur-sm">
+          <div className="max-w-6xl mx-auto px-4 flex gap-2 overflow-x-auto py-2">
+            {tabs.map((tab, index) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                style={{ animationDelay: `${index * 50}ms` }}
+                className={`
+                  animate-slide-in-up flex items-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 whitespace-nowrap active-press
+                  ${activeTab === tab.id
+                    ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/30 scale-105'
+                    : 'bg-white text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 hover:scale-105 border border-gray-200'}
+                `}
+                role="tab"
+                aria-selected={activeTab === tab.id}
+                aria-label={tab.label}
+              >
+                <tab.icon size={18} aria-hidden="true" />
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </div>
       </header>
 

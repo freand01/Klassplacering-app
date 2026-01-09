@@ -20,7 +20,7 @@ const Input = ({
     id={id}
     name={name}
     aria-label={ariaLabel || placeholder}
-    className={`w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors ${className}`}
+    className={`w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-400 outline-none transition-all duration-200 bg-white hover:border-gray-300 placeholder:text-gray-400 ${className}`}
   />
 );
 

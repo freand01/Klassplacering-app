@@ -3,34 +3,34 @@ import { X, CheckCircle, AlertCircle, AlertTriangle, Info } from 'lucide-react';
 
 const Toast = ({ message, type = 'info', onClose }) => {
   const typeStyles = {
-    success: 'bg-green-500 border-green-600',
-    error: 'bg-red-500 border-red-600',
-    warning: 'bg-yellow-500 border-yellow-600',
-    info: 'bg-blue-500 border-blue-600'
+    success: 'bg-gradient-to-r from-emerald-500 to-green-500 shadow-emerald-500/40',
+    error: 'bg-gradient-to-r from-red-500 to-pink-500 shadow-red-500/40',
+    warning: 'bg-gradient-to-r from-amber-500 to-orange-500 shadow-amber-500/40',
+    info: 'bg-gradient-to-r from-blue-500 to-indigo-500 shadow-blue-500/40'
   };
 
   const icons = {
-    success: <CheckCircle size={20} />,
-    error: <AlertCircle size={20} />,
-    warning: <AlertTriangle size={20} />,
-    info: <Info size={20} />
+    success: <CheckCircle size={22} />,
+    error: <AlertCircle size={22} />,
+    warning: <AlertTriangle size={22} />,
+    info: <Info size={22} />
   };
 
   return (
     <div
-      className={`fixed top-4 right-4 p-4 rounded-lg shadow-lg ${typeStyles[type]} text-white z-50 flex items-center gap-3 min-w-[300px] max-w-md border-l-4 animate-in slide-in-from-top-5 duration-300 print:hidden`}
+      className={`fixed top-6 right-6 p-5 rounded-2xl shadow-2xl ${typeStyles[type]} text-white z-50 flex items-center gap-4 min-w-[320px] max-w-md animate-scale-in backdrop-blur-sm print:hidden border border-white/20`}
       role="alert"
       aria-live="assertive"
     >
-      <div className="flex-shrink-0">
+      <div className="flex-shrink-0 animate-pulse">
         {icons[type]}
       </div>
       <div className="flex-grow">
-        <p className="text-sm font-medium">{message}</p>
+        <p className="text-sm font-semibold">{message}</p>
       </div>
       <button
         onClick={onClose}
-        className="flex-shrink-0 hover:bg-white/20 rounded p-1 transition-colors"
+        className="flex-shrink-0 hover:bg-white/20 rounded-lg p-1.5 transition-all hover:scale-110 active-press"
         aria-label="Stäng notifikation"
       >
         <X size={18} />

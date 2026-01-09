@@ -354,7 +354,17 @@ const LayoutTab = ({ showNotification }) => {
   };
 
   if (!currentClassId) {
-    return <div className="text-center py-10 text-gray-500">Välj en klass först.</div>;
+    return (
+      <div className="text-center py-16 bg-gradient-to-br from-white to-gray-50 rounded-2xl border-2 border-dashed border-gray-300 animate-fade-in">
+        <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-br from-purple-100 to-indigo-100 rounded-2xl flex items-center justify-center">
+          <MapPin size={40} className="text-indigo-600" />
+        </div>
+        <h3 className="text-xl font-bold text-gray-900 mb-2">Välj en klass först</h3>
+        <p className="text-sm text-gray-500 max-w-md mx-auto">
+          För att skapa eller visa klassrumsplacering behöver du först välja eller skapa en klass.
+        </p>
+      </div>
+    );
   }
 
   return (
