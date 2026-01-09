@@ -31,7 +31,7 @@ const ClassSelector = ({ showNotification }) => {
   };
 
   return (
-    <div className="bg-white/90 backdrop-blur-sm border-b border-gray-200 p-4 print:hidden">
+    <div className="bg-white border-b border-gray-200 p-4 print:hidden">
       <div className="max-w-5xl mx-auto flex flex-col md:flex-row gap-4 items-center justify-between">
         <div className="flex items-center gap-3 w-full md:w-auto overflow-x-auto">
           <span className="text-sm font-bold text-gray-600 uppercase tracking-wider flex items-center gap-2">

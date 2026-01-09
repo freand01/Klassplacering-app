@@ -447,12 +447,19 @@ const LayoutTab = ({ showNotification }) => {
                   <button
                     key={tool.type}
                     onClick={() => setDesignBrush(tool.type)}
-                    className={`p-2 rounded border flex items-center gap-2 text-sm ${
+                    draggable={true}
+                    onDragStart={(e) => {
+                      e.dataTransfer.effectAllowed = 'copy';
+                      e.dataTransfer.setData('text/plain', tool.type);
+                      setDesignBrush(tool.type);
+                    }}
+                    className={`p-2 rounded border flex items-center gap-2 text-sm cursor-grab active:cursor-grabbing ${
                       designBrush === tool.type
                         ? 'bg-indigo-600 text-white border-indigo-600'
                         : 'bg-white text-indigo-900 border-indigo-200 hover:bg-indigo-100'
                     }`}
                     aria-pressed={designBrush === tool.type}
+                    title="Klicka för att välja eller dra till klassrummet"
                   >
                     <IconComponent size={14} aria-hidden="true" /> {tool.label}
                   </button>
@@ -463,12 +470,19 @@ const LayoutTab = ({ showNotification }) => {
 
               <button
                 onClick={() => setDesignBrush(DESIGN_BRUSH_TYPES.ERASER)}
-                className={`p-2 rounded border flex items-center gap-2 text-sm ${
+                draggable={true}
+                onDragStart={(e) => {
+                  e.dataTransfer.effectAllowed = 'copy';
+                  e.dataTransfer.setData('text/plain', DESIGN_BRUSH_TYPES.ERASER);
+                  setDesignBrush(DESIGN_BRUSH_TYPES.ERASER);
+                }}
+                className={`p-2 rounded border flex items-center gap-2 text-sm cursor-grab active:cursor-grabbing ${
                   designBrush === DESIGN_BRUSH_TYPES.ERASER
                     ? 'bg-red-100 text-red-900 border-red-200'
                     : 'bg-white text-gray-700 border-gray-200 hover:bg-red-50'
                 }`}
                 aria-pressed={designBrush === DESIGN_BRUSH_TYPES.ERASER}
+                title="Klicka för att välja eller dra till klassrummet"
               >
                 <Eraser size={14} aria-hidden="true" /> Sudda
               </button>
@@ -476,7 +490,7 @@ const LayoutTab = ({ showNotification }) => {
 
             <div className="flex justify-between items-center mt-1 border-t border-indigo-200 pt-2">
               <div className="text-xs text-indigo-600 italic flex items-center gap-1">
-                <MousePointer2 size={12} aria-hidden="true" /> Klicka i rummet för att placera vald möbel.
+                <MousePointer2 size={12} aria-hidden="true" /> Klicka eller dra möbler till rummet för att placera.
               </div>
               <button
                 onClick={clearRoom}
@@ -575,6 +589,39 @@ const LayoutTab = ({ showNotification }) => {
         isDesignMode={isDesignMode}
         onCellClick={handleCellClick}
         onToggleLock={toggleLock}
+        onDesignDrop={(index, brushType) => {
+          setDesignBrush(brushType);
+          applyDesignTool(index);
+        }}
+        onStudentDrop={(fromIndex, toIndex) => {
+          // Swap students
+          const newLayout = [...currentPlan];
+          [newLayout[fromIndex], newLayout[toIndex]] = [newLayout[toIndex], newLayout[fromIndex]];
+
+          // Update locked status if needed
+          const newLocked = new Set(lockedIndices);
+          const fromLocked = lockedIndices.has(fromIndex);
+          const toLocked = lockedIndices.has(toIndex);
+
+          if (fromLocked && !toLocked) {
+            newLocked.delete(fromIndex);
+            newLocked.add(toIndex);
+          } else if (!fromLocked && toLocked) {
+            newLocked.delete(toIndex);
+            newLocked.add(fromIndex);
+          }
+
+          setCurrentPlan(newLayout);
+          setLockedIndices(newLocked);
+          updateActivePlanInState({
+            layout: newLayout,
+            seatMap: currentSeatMap,
+            locked: Array.from(newLocked),
+            rows,
+            cols
+          });
+          showNotification('Elever bytte plats', 'success');
+        }}
       />
 
       {!isDesignMode && (
