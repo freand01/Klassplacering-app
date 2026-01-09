@@ -9,8 +9,11 @@ const SeatingCell = memo(({
   isLocked,
   isDesignMode,
   onCellClick,
-  onToggleLock
+  onToggleLock,
+  onDesignDrop,
+  onStudentDrop
 }) => {
+  const [isDragOver, setIsDragOver] = React.useState(false);
   let cellClass = "h-20 sm:h-24 rounded-2xl border-2 flex flex-col items-center justify-center text-center relative transition-all duration-300 ";
 
   if (isDesignMode) {
@@ -19,6 +22,9 @@ const SeatingCell = memo(({
       cellClass += "bg-gradient-to-br from-indigo-50 to-purple-50 border-indigo-300 shadow-lg hover:shadow-xl ";
     } else {
       cellClass += "bg-white/50 border-2 border-dashed border-gray-300 hover:border-indigo-300 hover:bg-indigo-50/30 ";
+    }
+    if (isDragOver) {
+      cellClass += "ring-4 ring-green-400 scale-110 bg-green-50 ";
     }
   } else {
     if (!isSeat) {
@@ -29,12 +35,59 @@ const SeatingCell = memo(({
       else if (isLocked) cellClass += "bg-gradient-to-br from-purple-50 to-pink-50 border-purple-400 shadow-lg ring-2 ring-purple-200 print:bg-white print:border-gray-200 print:shadow-none print:ring-0 ";
       else if (student) cellClass += "bg-white border-gray-200 shadow-md hover:border-indigo-300 hover:shadow-xl hover:scale-105 ";
       else cellClass += "bg-gray-50 border-gray-300 border-dashed hover:bg-gray-100 hover:scale-105 ";
+      if (student) cellClass += "cursor-grab active:cursor-grabbing ";
+      if (isDragOver && !student) {
+        cellClass += "ring-4 ring-green-400 scale-105 bg-green-50 ";
+      }
     }
   }
+
+  const handleDragStart = (e) => {
+    if (!isDesignMode && student) {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', index.toString());
+    }
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    if (isDesignMode || (!isDesignMode && isSeat && !student)) {
+      e.dataTransfer.dropEffect = isDesignMode ? 'copy' : 'move';
+      setIsDragOver(true);
+    }
+  };
+
+  const handleDragLeave = () => {
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const data = e.dataTransfer.getData('text/plain');
+
+    if (isDesignMode) {
+      // Dropping a brush type in design mode
+      if (onDesignDrop) {
+        onDesignDrop(index, data);
+      }
+    } else {
+      // Dropping a student in normal mode
+      const fromIndex = parseInt(data, 10);
+      if (!isNaN(fromIndex) && fromIndex !== index && isSeat && !student && onStudentDrop) {
+        onStudentDrop(fromIndex, index);
+      }
+    }
+  };
 
   return (
     <div
       onClick={() => onCellClick(index)}
+      draggable={!isDesignMode && student}
+      onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
       className={cellClass}
       role={isDesignMode ? "button" : isSeat ? "gridcell" : undefined}
       aria-label={
@@ -110,7 +163,9 @@ const SeatingGrid = ({
   lockedIndices,
   isDesignMode,
   onCellClick,
-  onToggleLock
+  onToggleLock,
+  onDesignDrop,
+  onStudentDrop
 }) => {
   return (
     <div className="overflow-x-auto pb-4 max-w-full print:overflow-visible">
@@ -148,6 +203,8 @@ const SeatingGrid = ({
               isDesignMode={isDesignMode}
               onCellClick={onCellClick}
               onToggleLock={onToggleLock}
+              onDesignDrop={onDesignDrop}
+              onStudentDrop={onStudentDrop}
             />
           );
         })}

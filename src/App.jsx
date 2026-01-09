@@ -167,7 +167,7 @@ const AppContent = () => {
       )}
 
       {/* HEADER */}
-      <header className="sticky top-0 z-10 print:hidden backdrop-blur-lg bg-white/80 border-b border-white/20 shadow-lg shadow-gray-900/5">
+      <header className="sticky top-0 z-40 print:hidden backdrop-blur-lg bg-white border-b border-white/20 shadow-lg shadow-gray-900/5">
         <div className="gradient-header">
           <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
             <div className="flex items-center gap-3 animate-slide-in-right">
@@ -209,7 +209,7 @@ const AppContent = () => {
 
         <ClassSelector showNotification={showNotification} />
 
-        <div className="bg-white/80 backdrop-blur-sm">
+        <div className="bg-white">
           <div className="max-w-6xl mx-auto px-4 flex gap-2 overflow-x-auto py-2">
             {tabs.map((tab, index) => (
               <button
