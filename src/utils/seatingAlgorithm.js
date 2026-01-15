@@ -96,8 +96,10 @@ export class SeatingOptimizer {
     pool = pool.filter(s => !s.needsWall);
     wallGroup.forEach(student => {
       const isWall = (idx) => {
+        const r = Math.floor(idx / this.cols);
         const c = idx % this.cols;
-        return c === 0 || c === this.cols - 1;
+        // Wall is side columns (0 or last) BUT NOT front row (0) or back row (last)
+        return (c === 0 || c === this.cols - 1) && r > 0 && r < this.rows - 1;
       };
       if (!placeStudentAtFirstAvailable(student, isWall)) {
         placeStudentAtFirstAvailable(student);
@@ -158,7 +160,8 @@ export class SeatingOptimizer {
     const r = Math.floor(index / this.cols);
     const c = index % this.cols;
     if (student.needsFront && r !== 0) return false;
-    if (student.needsWall && c !== 0 && c !== this.cols - 1) return false;
+    // Wall is side columns (0 or last) BUT NOT front row (0) or back row (last)
+    if (student.needsWall && !((c === 0 || c === this.cols - 1) && r > 0 && r < this.rows - 1)) return false;
     return true;
   }
 
@@ -192,6 +195,15 @@ export class SeatingOptimizer {
 
       // Prefer front rows
       score += r * ALGORITHM_CONSTANTS.ROW_PENALTY_MULTIPLIER;
+
+      // Check if alone students have neighbors (horizontal only)
+      if (gridToCheck[i].needsAlone) {
+        const hasLeftNeighbor = c > 0 && this.seatMap[i - 1] && gridToCheck[i - 1];
+        const hasRightNeighbor = c < this.cols - 1 && this.seatMap[i + 1] && gridToCheck[i + 1];
+        if (hasLeftNeighbor || hasRightNeighbor) {
+          score += ALGORITHM_CONSTANTS.HARD_CONSTRAINT_PENALTY; // Treat as hard constraint
+        }
+      }
 
       // Check isolation
       let neighborCount = 0;

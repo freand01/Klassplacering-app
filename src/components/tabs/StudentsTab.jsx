@@ -14,12 +14,12 @@ const StudentsTab = ({
   const { data, currentClassId } = state;
 
   const [newStudentName, setNewStudentName] = useState('');
-  const [studentAttr, setStudentAttr] = useState({ front: false, wall: false });
+  const [studentAttr, setStudentAttr] = useState({ front: false, wall: false, alone: false });
   const [isBulkMode, setIsBulkMode] = useState(false);
   const [bulkList, setBulkList] = useState([
-    { id: '1', name: '', front: false, wall: false },
-    { id: '2', name: '', front: false, wall: false },
-    { id: '3', name: '', front: false, wall: false }
+    { id: '1', name: '', front: false, wall: false, alone: false },
+    { id: '2', name: '', front: false, wall: false, alone: false },
+    { id: '3', name: '', front: false, wall: false, alone: false }
   ]);
 
   const getStudents = () =>
@@ -36,11 +36,12 @@ const StudentsTab = ({
       name: newStudentName.trim(),
       needsFront: studentAttr.front,
       needsWall: studentAttr.wall,
+      needsAlone: studentAttr.alone,
       createdAt: Date.now()
     };
     dispatch({ type: ACTIONS.ADD_STUDENT, payload: newStudent });
     setNewStudentName('');
-    setStudentAttr({ front: false, wall: false });
+    setStudentAttr({ front: false, wall: false, alone: false });
     showNotification('Elev tillagd', 'success');
   };
 
@@ -54,12 +55,12 @@ const StudentsTab = ({
   };
 
   const addBulkRow = () => {
-    setBulkList(prev => [...prev, { id: crypto.randomUUID(), name: '', front: false, wall: false }]);
+    setBulkList(prev => [...prev, { id: crypto.randomUUID(), name: '', front: false, wall: false, alone: false }]);
   };
 
   const removeBulkRow = (id) => {
     if (bulkList.length <= 1) {
-      setBulkList([{ id: crypto.randomUUID(), name: '', front: false, wall: false }]);
+      setBulkList([{ id: crypto.randomUUID(), name: '', front: false, wall: false, alone: false }]);
       return;
     }
     setBulkList(prev => prev.filter(item => item.id !== id));
@@ -74,12 +75,13 @@ const StudentsTab = ({
         name: s.name.trim(),
         needsFront: s.front,
         needsWall: s.wall,
+        needsAlone: s.alone,
         createdAt: Date.now()
       }));
 
     if (validStudents.length > 0) {
       dispatch({ type: ACTIONS.ADD_STUDENTS_BULK, payload: validStudents });
-      setBulkList([{ id: crypto.randomUUID(), name: '', front: false, wall: false }]);
+      setBulkList([{ id: crypto.randomUUID(), name: '', front: false, wall: false, alone: false }]);
       setIsBulkMode(false);
       showNotification(`${validStudents.length} elever tillagda`, 'success');
     }
@@ -158,6 +160,15 @@ const StudentsTab = ({
                 />
                 Vid vägg
               </label>
+              <label className="flex gap-2 cursor-pointer items-center select-none">
+                <input
+                  type="checkbox"
+                  checked={studentAttr.alone}
+                  onChange={e => setStudentAttr({ ...studentAttr, alone: e.target.checked })}
+                  aria-label="Ska sitta själv"
+                />
+                Sitta själv
+              </label>
             </div>
             <Button onClick={addStudent}>Lägg till</Button>
           </div>
@@ -179,6 +190,7 @@ const StudentsTab = ({
               <div className="flex-grow">Namn</div>
               <div className="w-20 text-center">Tavla</div>
               <div className="w-20 text-center">Vägg</div>
+              <div className="w-20 text-center">Själv</div>
               <div className="w-8"></div>
             </div>
             {bulkList.map((item, idx) => (
@@ -207,6 +219,15 @@ const StudentsTab = ({
                     onChange={e => handleBulkChange(item.id, 'wall', e.target.checked)}
                     className="w-5 h-5"
                     aria-label={`Elev ${idx + 1} vid vägg`}
+                  />
+                </label>
+                <label className="w-20 flex justify-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={item.alone}
+                    onChange={e => handleBulkChange(item.id, 'alone', e.target.checked)}
+                    className="w-5 h-5"
+                    aria-label={`Elev ${idx + 1} sitta själv`}
                   />
                 </label>
                 <button
@@ -257,6 +278,11 @@ const StudentsTab = ({
                 {s.needsWall && (
                   <span className="text-[10px] font-semibold bg-gradient-to-r from-green-100 to-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-200">
                     Vägg
+                  </span>
+                )}
+                {s.needsAlone && (
+                  <span className="text-[10px] font-semibold bg-gradient-to-r from-blue-100 to-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full border border-indigo-200">
+                    Själv
                   </span>
                 )}
               </div>

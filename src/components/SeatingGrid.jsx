@@ -123,6 +123,9 @@ const SeatingCell = memo(({
                 {student.needsWall && (
                   <div className="w-2 h-2 rounded-full bg-gradient-to-r from-green-400 to-emerald-400 shadow-sm" title="Vid vägg" />
                 )}
+                {student.needsAlone && (
+                  <div className="w-2 h-2 rounded-full bg-gradient-to-r from-blue-400 to-indigo-400 shadow-sm" title="Ska sitta själv" />
+                )}
               </div>
 
               <button
