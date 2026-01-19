@@ -28,7 +28,7 @@ const DeskItem = ({
   const renderContent = () => {
     if (isDesignMode) {
       return (
-        <div className="text-white font-semibold text-xs">
+        <div className="text-white font-semibold text-xs pointer-events-none">
           {config.label}
         </div>
       );
@@ -36,7 +36,7 @@ const DeskItem = ({
 
     if (students.length === 0) {
       return (
-        <div className="text-white/60 text-xs font-medium">
+        <div className="text-white/60 text-xs font-medium pointer-events-none">
           Ledigt
         </div>
       );
@@ -45,7 +45,7 @@ const DeskItem = ({
     // For single capacity desks, show student name centered
     if (config.capacity === 1) {
       return (
-        <div className="text-white font-bold text-sm px-2 text-center break-words">
+        <div className="text-white font-bold text-sm px-2 text-center break-words pointer-events-none">
           {students[0]?.name}
           {students[0]?.needsFront && (
             <div className="w-2 h-2 rounded-full bg-yellow-400 absolute top-2 right-2" title="Nära tavlan" />
@@ -59,7 +59,7 @@ const DeskItem = ({
 
     // For multiple capacity desks, show names in grid
     return (
-      <div className="grid gap-1 p-2 w-full h-full" style={{
+      <div className="grid gap-1 p-2 w-full h-full pointer-events-none" style={{
         gridTemplateColumns: config.capacity === 2 ? 'repeat(2, 1fr)' :
                            config.capacity === 4 ? 'repeat(2, 1fr)' :
                            config.capacity === 5 ? 'repeat(3, 1fr)' :
@@ -87,8 +87,10 @@ const DeskItem = ({
 
   return (
     <div
-      className={`desk-item absolute rounded-xl shadow-lg cursor-move transition-all duration-200 flex items-center justify-center bg-gradient-to-br ${config.color} ${
-        isSelected ? 'ring-4 ring-green-400 scale-105 z-50' : 'hover:scale-105 hover:shadow-xl'
+      className={`desk-item absolute rounded-xl shadow-lg transition-all duration-200 flex items-center justify-center bg-gradient-to-br ${config.color} ${
+        isDesignMode ? 'cursor-move' : 'cursor-pointer'
+      } ${
+        isSelected ? 'ring-4 ring-green-400 scale-110 z-50 shadow-2xl' : 'hover:scale-105 hover:shadow-xl'
       } ${isLocked ? 'ring-2 ring-purple-400' : ''}`}
       style={{
         left: desk.x + 'px',
@@ -97,7 +99,11 @@ const DeskItem = ({
         height: config.height + 'px',
         transform: `rotate(${rotation}deg)`,
       }}
-      onMouseDown={(e) => onDragStart(desk, e)}
+      onMouseDown={(e) => {
+        if (isDesignMode) {
+          onDragStart(desk, e);
+        }
+      }}
       onClick={(e) => {
         e.stopPropagation();
         onClick(desk);
@@ -280,7 +286,7 @@ const FreePositioningCanvas = ({
   const assignedStudents = desks.reduce((sum, desk) => sum + (desk.students?.length || 0), 0);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 free-positioning-canvas-wrapper">
       {/* Statistics */}
       <div className="flex gap-6 justify-center bg-white p-4 rounded-xl border border-gray-100 print:hidden">
         <div className="text-center">
@@ -300,8 +306,12 @@ const FreePositioningCanvas = ({
       {/* Canvas */}
       <div
         ref={canvasRef}
-        className="relative bg-white rounded-2xl shadow-xl border-2 border-gray-200 overflow-hidden print:overflow-visible print:shadow-none print:border print:rounded-none print:h-auto print:min-h-0"
-        style={{ height: '700px', minHeight: '500px' }}
+        className="free-positioning-canvas relative bg-white rounded-2xl shadow-xl border-2 border-gray-200 overflow-hidden print:overflow-visible print:shadow-none print:border print:rounded-none"
+        style={{
+          height: '700px',
+          minHeight: '500px',
+          width: '100%'
+        }}
         onClick={handleCanvasClick}
       >
         {/* Whiteboard */}
