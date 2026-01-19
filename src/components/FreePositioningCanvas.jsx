@@ -85,7 +85,7 @@ const DeskItem = ({
 
   return (
     <div
-      className={`absolute rounded-xl shadow-lg cursor-move transition-all duration-200 flex items-center justify-center bg-gradient-to-br ${config.color} ${
+      className={`desk-item absolute rounded-xl shadow-lg cursor-move transition-all duration-200 flex items-center justify-center bg-gradient-to-br ${config.color} ${
         isSelected ? 'ring-4 ring-green-400 scale-105 z-50' : 'hover:scale-105 hover:shadow-xl'
       } ${isLocked ? 'ring-2 ring-purple-400' : ''}`}
       style={{
@@ -167,8 +167,11 @@ const FreePositioningCanvas = ({
   }, []);
 
   const handleCanvasClick = (e) => {
-    if (!isDesignMode || !currentBrush || e.target !== canvasRef.current) return;
+    if (!isDesignMode || !currentBrush) return;
     if (currentBrush === 'eraser') return;
+
+    // Don't place if clicking on a desk (let desk handle its own click)
+    if (e.target.closest('.desk-item')) return;
 
     const rect = canvasRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
