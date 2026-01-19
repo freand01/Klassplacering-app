@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Lock, Unlock, X, Move } from 'lucide-react';
+import { Lock, Unlock, X, Move, RotateCcw } from 'lucide-react';
 
 // Desk type configurations
 const DESK_TYPES = {
@@ -15,6 +15,7 @@ const DeskItem = ({
   onDragStart,
   onDelete,
   onToggleLock,
+  onRotate,
   isLocked,
   isSelected,
   onClick,
@@ -22,6 +23,7 @@ const DeskItem = ({
   isDesignMode
 }) => {
   const config = DESK_TYPES[desk.type];
+  const rotation = desk.rotation || 0;
 
   const renderContent = () => {
     if (isDesignMode) {
@@ -93,6 +95,7 @@ const DeskItem = ({
         top: desk.y + 'px',
         width: config.width + 'px',
         height: config.height + 'px',
+        transform: `rotate(${rotation}deg)`,
       }}
       onMouseDown={(e) => onDragStart(desk, e)}
       onClick={(e) => {
@@ -104,21 +107,33 @@ const DeskItem = ({
 
       {/* Delete button (design mode only) */}
       {isDesignMode && (
-        <button
-          className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center shadow-md transition-all hover:scale-110 z-10"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete(desk.id);
-          }}
-        >
-          <X size={14} />
-        </button>
+        <>
+          <button
+            className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center shadow-md transition-all hover:scale-110 z-10 print:hidden"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(desk.id);
+            }}
+          >
+            <X size={14} />
+          </button>
+          <button
+            className="absolute -top-2 -left-2 w-6 h-6 bg-blue-500 hover:bg-blue-600 text-white rounded-full flex items-center justify-center shadow-md transition-all hover:scale-110 z-10 print:hidden"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRotate(desk.id);
+            }}
+            title="Rotera 15°"
+          >
+            <RotateCcw size={14} />
+          </button>
+        </>
       )}
 
       {/* Lock button (student mode only) */}
       {!isDesignMode && students.length > 0 && (
         <button
-          className={`absolute bottom-1 right-1 p-1 rounded-lg transition-all hover:scale-110 ${
+          className={`absolute bottom-1 right-1 p-1 rounded-lg transition-all hover:scale-110 print:hidden ${
             isLocked
               ? 'bg-purple-100 text-purple-600'
               : 'bg-white/30 text-white hover:bg-white/50'
@@ -134,7 +149,7 @@ const DeskItem = ({
 
       {/* Selected indicator */}
       {isSelected && !isDesignMode && (
-        <div className="absolute -top-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white text-xs px-2 py-1 rounded-full flex items-center gap-1 shadow-lg">
+        <div className="absolute -top-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white text-xs px-2 py-1 rounded-full flex items-center gap-1 shadow-lg print:hidden">
           <Move size={10} /> Välj plats
         </div>
       )}
@@ -243,6 +258,18 @@ const FreePositioningCanvas = ({
     onDesksChange(desks.filter(d => d.id !== deskId));
   };
 
+  const handleRotateDesk = (deskId) => {
+    const updatedDesks = desks.map(d => {
+      if (d.id === deskId) {
+        const currentRotation = d.rotation || 0;
+        const newRotation = (currentRotation + 15) % 360;
+        return { ...d, rotation: newRotation };
+      }
+      return d;
+    });
+    onDesksChange(updatedDesks);
+  };
+
   const handleDeskClick = (desk) => {
     if (isDesignMode) return;
     onDeskSelect?.(desk);
@@ -273,7 +300,7 @@ const FreePositioningCanvas = ({
       {/* Canvas */}
       <div
         ref={canvasRef}
-        className="relative bg-white rounded-2xl shadow-xl border-2 border-gray-200 overflow-hidden"
+        className="relative bg-white rounded-2xl shadow-xl border-2 border-gray-200 overflow-hidden print:overflow-visible print:shadow-none print:border print:rounded-none print:h-auto print:min-h-0"
         style={{ height: '700px', minHeight: '500px' }}
         onClick={handleCanvasClick}
       >
@@ -287,7 +314,7 @@ const FreePositioningCanvas = ({
         </div>
 
         {/* Grid lines (subtle, for alignment help) */}
-        <svg className="absolute inset-0 pointer-events-none opacity-10" style={{ zIndex: 1 }}>
+        <svg className="absolute inset-0 pointer-events-none opacity-10 print:hidden" style={{ zIndex: 1 }}>
           <defs>
             <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
               <path d="M 50 0 L 0 0 0 50" fill="none" stroke="gray" strokeWidth="0.5"/>
@@ -304,6 +331,7 @@ const FreePositioningCanvas = ({
               desk={desk}
               onDragStart={handleDeskDragStart}
               onDelete={handleDeleteDesk}
+              onRotate={handleRotateDesk}
               onToggleLock={onToggleLock}
               isLocked={lockedDesks.has(desk.id)}
               isSelected={selectedDesk?.id === desk.id}
@@ -316,7 +344,7 @@ const FreePositioningCanvas = ({
 
         {/* Empty state */}
         {desks.length === 0 && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ zIndex: 2 }}>
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none print:hidden" style={{ zIndex: 2 }}>
             <div className="text-center text-gray-400 bg-white/80 p-8 rounded-xl border-2 border-dashed border-gray-300">
               <div className="text-4xl mb-3">🪑</div>
               <p className="font-semibold mb-2">Tomt klassrum</p>
@@ -332,7 +360,7 @@ const FreePositioningCanvas = ({
 
         {/* Cursor indicator in design mode */}
         {isDesignMode && currentBrush && currentBrush !== 'eraser' && (
-          <div className="absolute bottom-4 right-4 bg-indigo-600 text-white px-4 py-2 rounded-lg shadow-lg text-sm font-semibold pointer-events-none z-20">
+          <div className="absolute bottom-4 right-4 bg-indigo-600 text-white px-4 py-2 rounded-lg shadow-lg text-sm font-semibold pointer-events-none z-20 print:hidden">
             Placerar: {DESK_TYPES[currentBrush]?.label}
           </div>
         )}
