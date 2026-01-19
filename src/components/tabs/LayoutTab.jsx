@@ -3,11 +3,12 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   PenTool, Settings, RefreshCw, Printer, Save, Square, Columns, Grid3X3,
   LayoutGrid as LayoutGridIcon, Maximize, Eraser, MousePointer2, RotateCcw,
-  Layout, FilePlus, X
+  Layout, FilePlus, X, Grid2X2, Paintbrush
 } from 'lucide-react';
 import Button from '../Button';
 import Input from '../Input';
 import SeatingGrid from '../SeatingGrid';
+import FreePositioningCanvas from '../FreePositioningCanvas';
 import { useApp, ACTIONS } from '../../contexts/AppContext';
 import { DEFAULT_ROWS, DEFAULT_COLS, DESIGN_BRUSH_TYPES } from '../../utils/constants';
 import { SeatingOptimizer } from '../../utils/seatingAlgorithm';
@@ -29,6 +30,12 @@ const LayoutTab = ({ showNotification }) => {
   const [generationMsg, setGenerationMsg] = useState('');
   const [planName, setPlanName] = useState('');
   const [layoutName, setLayoutName] = useState('');
+
+  // Free positioning states
+  const [layoutMode, setLayoutMode] = useState('grid'); // 'grid' | 'free'
+  const [desks, setDesks] = useState([]);
+  const [selectedDesk, setSelectedDesk] = useState(null);
+  const [lockedDesks, setLockedDesks] = useState(new Set());
 
   const getStudents = () =>
     data.students.filter(s => s.classId === currentClassId).sort((a, b) => a.name.localeCompare(b.name));
@@ -61,12 +68,22 @@ const LayoutTab = ({ showNotification }) => {
       setCurrentSeatMap(active.seatMap || Array(r * c).fill(false));
       setLockedIndices(new Set(active.locked || []));
       setGenerationMsg("");
+
+      // Load free positioning data
+      setLayoutMode(active.layoutMode || 'grid');
+      setDesks(active.desks || []);
+      setLockedDesks(new Set(active.lockedDesks || []));
     } else {
       setCurrentPlan(Array(r * c).fill(null));
       setCurrentSeatMap(Array(r * c).fill(false));
       setLockedIndices(new Set());
       setGenerationMsg("");
       setIsDesignMode(true);
+
+      // Reset free positioning
+      setLayoutMode('grid');
+      setDesks([]);
+      setLockedDesks(new Set());
     }
   }, [currentClassId, data.activePlans]);
 
@@ -195,6 +212,110 @@ const LayoutTab = ({ showNotification }) => {
     setLockedIndices(newLocked);
 
     updateActivePlanInState({ locked: Array.from(newLocked) });
+  };
+
+  // Free positioning handlers
+  const handleDesksChange = (newDesks) => {
+    setDesks(newDesks);
+    updateActivePlanInState({ desks: newDesks, layoutMode });
+  };
+
+  const handleDeskLockToggle = (deskId) => {
+    const newLockedDesks = new Set(lockedDesks);
+    if (newLockedDesks.has(deskId)) {
+      newLockedDesks.delete(deskId);
+    } else {
+      newLockedDesks.add(deskId);
+    }
+    setLockedDesks(newLockedDesks);
+    updateActivePlanInState({ lockedDesks: Array.from(newLockedDesks) });
+  };
+
+  const handleDeskSelect = (desk) => {
+    if (isDesignMode) return;
+
+    if (!selectedDesk) {
+      // Select first desk
+      setSelectedDesk(desk);
+    } else if (selectedDesk.id === desk.id) {
+      // Deselect
+      setSelectedDesk(null);
+    } else {
+      // Swap students between desks
+      const updatedDesks = desks.map(d => {
+        if (d.id === selectedDesk.id) {
+          return { ...d, students: desk.students || [] };
+        } else if (d.id === desk.id) {
+          return { ...d, students: selectedDesk.students || [] };
+        }
+        return d;
+      });
+
+      setDesks(updatedDesks);
+      setSelectedDesk(null);
+      updateActivePlanInState({ desks: updatedDesks });
+      showNotification('Elever bytte plats', 'success');
+    }
+  };
+
+  const generateSeatingFreeMode = () => {
+    const students = getStudents();
+
+    if (desks.length === 0) {
+      showNotification('Du måste möblera klassrummet först!', 'warning');
+      return;
+    }
+
+    const totalSeats = desks.reduce((sum, desk) => sum + desk.capacity, 0);
+
+    if (students.length > totalSeats) {
+      showNotification(`Varning: Fler elever (${students.length}) än platser (${totalSeats}).`, 'warning');
+    }
+
+    if (students.length === 0) {
+      setGenerationMsg("Inga elever i vald klass.");
+      showNotification('Inga elever i vald klass.', 'info');
+      return;
+    }
+
+    setIsGenerating(true);
+    setGenerationMsg("Placerar elever...");
+
+    setTimeout(() => {
+      // Simple shuffle algorithm for free positioning
+      const shuffledStudents = [...students].sort(() => Math.random() - 0.5);
+      let studentIndex = 0;
+
+      const updatedDesks = desks.map(desk => {
+        // Keep locked desks as-is
+        if (lockedDesks.has(desk.id)) {
+          studentIndex += desk.students?.length || 0;
+          return desk;
+        }
+
+        // Assign students to desk
+        const deskStudents = [];
+        for (let i = 0; i < desk.capacity && studentIndex < shuffledStudents.length; i++) {
+          deskStudents.push(shuffledStudents[studentIndex++]);
+        }
+
+        return { ...desk, students: deskStudents };
+      });
+
+      setDesks(updatedDesks);
+      updateActivePlanInState({ desks: updatedDesks });
+
+      let msg = "Klar!";
+      if (lockedDesks.size > 0) msg += ` (Låste: ${lockedDesks.size} bänkar)`;
+      setGenerationMsg(msg);
+      setIsGenerating(false);
+      showNotification(msg, 'success');
+    }, 100);
+  };
+
+  const switchLayoutMode = (mode) => {
+    setLayoutMode(mode);
+    updateActivePlanInState({ layoutMode: mode });
   };
 
   const handleCellClick = (index) => {
@@ -371,6 +492,32 @@ const LayoutTab = ({ showNotification }) => {
     <div className="space-y-6">
       {/* CONTROLS */}
       <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col gap-4 print:hidden">
+        {/* Layout Mode Toggle */}
+        <div className="flex gap-2 p-2 bg-gray-100 rounded-lg w-fit">
+          <button
+            onClick={() => switchLayoutMode('grid')}
+            className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-all font-semibold text-sm ${
+              layoutMode === 'grid'
+                ? 'bg-white text-indigo-600 shadow-sm'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Grid2X2 size={16} />
+            Grid-läge
+          </button>
+          <button
+            onClick={() => switchLayoutMode('free')}
+            className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-all font-semibold text-sm ${
+              layoutMode === 'free'
+                ? 'bg-white text-indigo-600 shadow-sm'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Paintbrush size={16} />
+            Fri positionering
+          </button>
+        </div>
+
         {/* Top Row */}
         <div className="flex flex-wrap justify-between items-center gap-4">
           <div className="flex gap-4 items-center">
@@ -418,10 +565,17 @@ const LayoutTab = ({ showNotification }) => {
           <div className="flex gap-2">
             {!isDesignMode && (
               <>
-                <Button onClick={generateSeating} disabled={isGenerating}>
+                <Button
+                  onClick={() => layoutMode === 'grid' ? generateSeating() : generateSeatingFreeMode()}
+                  disabled={isGenerating}
+                >
                   {isGenerating ? '...' : 'Generera'} <RefreshCw size={18} />
                 </Button>
-                <Button variant="secondary" onClick={() => window.print()} disabled={currentPlan.length === 0}>
+                <Button
+                  variant="secondary"
+                  onClick={() => window.print()}
+                  disabled={layoutMode === 'grid' ? currentPlan.length === 0 : desks.length === 0}
+                >
                   <Printer size={18} /> Skriv ut
                 </Button>
               </>
@@ -429,8 +583,8 @@ const LayoutTab = ({ showNotification }) => {
           </div>
         </div>
 
-        {/* Design Tools */}
-        {isDesignMode && (
+        {/* Design Tools - Grid Mode */}
+        {isDesignMode && layoutMode === 'grid' && (
           <div className="bg-indigo-50 border border-indigo-100 p-3 rounded-lg flex flex-col gap-3">
             <div className="flex flex-wrap gap-2 items-center">
               <span className="text-xs font-bold text-indigo-900 uppercase tracking-wider mr-2">Verktyg:</span>
@@ -557,6 +711,65 @@ const LayoutTab = ({ showNotification }) => {
             </div>
           </div>
         )}
+
+        {/* Design Tools - Free Positioning Mode */}
+        {isDesignMode && layoutMode === 'free' && (
+          <div className="bg-purple-50 border border-purple-100 p-3 rounded-lg flex flex-col gap-3">
+            <div className="flex flex-wrap gap-2 items-center">
+              <span className="text-xs font-bold text-purple-900 uppercase tracking-wider mr-2">Möbeltyper:</span>
+
+              {[
+                { type: DESIGN_BRUSH_TYPES.SINGLE, label: '🪑 Singel (1)' },
+                { type: DESIGN_BRUSH_TYPES.PAIR, label: '🪑🪑 Dubbel (2)' },
+                { type: DESIGN_BRUSH_TYPES.GROUP_4, label: '▦ Grupp 4' },
+                { type: DESIGN_BRUSH_TYPES.GROUP_5, label: '⬡ Grupp 5' },
+                { type: DESIGN_BRUSH_TYPES.GROUP_6, label: '▦ Grupp 6' }
+              ].map((tool) => (
+                <button
+                  key={tool.type}
+                  onClick={() => setDesignBrush(tool.type)}
+                  className={`px-3 py-2 rounded-lg border text-sm font-semibold transition-all ${
+                    designBrush === tool.type
+                      ? 'bg-purple-600 text-white border-purple-600 shadow-md'
+                      : 'bg-white text-purple-900 border-purple-200 hover:bg-purple-100'
+                  }`}
+                >
+                  {tool.label}
+                </button>
+              ))}
+
+              <div className="h-6 w-[1px] bg-purple-200 mx-1"></div>
+
+              <button
+                onClick={() => setDesignBrush(DESIGN_BRUSH_TYPES.ERASER)}
+                className={`px-3 py-2 rounded-lg border text-sm font-semibold transition-all ${
+                  designBrush === DESIGN_BRUSH_TYPES.ERASER
+                    ? 'bg-red-100 text-red-900 border-red-200'
+                    : 'bg-white text-gray-700 border-gray-200 hover:bg-red-50'
+                }`}
+              >
+                <Eraser size={14} className="inline mr-1" /> Sudda
+              </button>
+            </div>
+
+            <div className="text-xs text-purple-600 italic flex items-center gap-1">
+              <MousePointer2 size={12} /> Välj möbel och klicka var som helst i klassrummet för att placera. Dra för att flytta.
+            </div>
+
+            <div className="flex justify-between items-center mt-1 border-t border-purple-200 pt-2">
+              <button
+                onClick={() => {
+                  setDesks([]);
+                  updateActivePlanInState({ desks: [] });
+                  showNotification('Klassrummet rensat', 'info');
+                }}
+                className="text-xs font-medium text-red-600 hover:text-red-800 hover:bg-red-50 px-2 py-1 rounded flex items-center gap-1 transition-colors"
+              >
+                <RotateCcw size={12} /> Rensa klassrum
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {generationMsg && !isDesignMode && (
@@ -567,7 +780,7 @@ const LayoutTab = ({ showNotification }) => {
         </div>
       )}
 
-      {currentPlan.length > 0 && selectedSeatIndex === null && !isDesignMode && (
+      {layoutMode === 'grid' && currentPlan.length > 0 && selectedSeatIndex === null && !isDesignMode && (
         <div className="print:hidden">
           <p className="text-center text-xs text-gray-400 italic mb-1">
             💡 Tips: Klicka på en elev och sedan på en annan plats för att byta plats.
@@ -578,8 +791,20 @@ const LayoutTab = ({ showNotification }) => {
         </div>
       )}
 
-      {/* SEATING GRID */}
-      <SeatingGrid
+      {layoutMode === 'free' && !isDesignMode && (
+        <div className="print:hidden">
+          <p className="text-center text-xs text-gray-400 italic mb-1">
+            💡 Tips: Klicka på en bänk och sedan på en annan bänk för att byta elever.
+          </p>
+          <p className="text-center text-xs text-gray-400 italic mb-2">
+            🔒 Tips: Använd hänglåset på en bänk för att låsa den vid nästa generering.
+          </p>
+        </div>
+      )}
+
+      {/* LAYOUT RENDERING */}
+      {layoutMode === 'grid' ? (
+        <SeatingGrid
         rows={rows}
         cols={cols}
         currentPlan={currentPlan}
@@ -623,6 +848,19 @@ const LayoutTab = ({ showNotification }) => {
           showNotification('Elever bytte plats', 'success');
         }}
       />
+      ) : (
+        <FreePositioningCanvas
+          isDesignMode={isDesignMode}
+          currentBrush={designBrush}
+          desks={desks}
+          onDesksChange={handleDesksChange}
+          students={getStudents()}
+          lockedDesks={lockedDesks}
+          onToggleLock={handleDeskLockToggle}
+          selectedDesk={selectedDesk}
+          onDeskSelect={handleDeskSelect}
+        />
+      )}
 
       {!isDesignMode && (
         <div className="mt-8 flex gap-4 justify-center items-end bg-white p-4 rounded-xl border print:hidden">
