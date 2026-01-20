@@ -18,7 +18,9 @@ const DeskItem = ({
   onRotate,
   isLocked,
   isSelected,
+  selectedStudentIndex,
   onClick,
+  onStudentClick,
   students = [],
   isDesignMode
 }) => {
@@ -44,13 +46,25 @@ const DeskItem = ({
 
     // For single capacity desks, show student name centered
     if (config.capacity === 1) {
+      const student = students[0];
+      const isStudentSelected = isSelected && selectedStudentIndex === 0;
       return (
-        <div className="text-white font-bold text-sm px-2 text-center break-words pointer-events-none">
-          {students[0]?.name}
-          {students[0]?.needsFront && (
+        <div
+          className={`text-white font-bold text-sm px-2 text-center break-words cursor-pointer transition-all ${
+            isStudentSelected ? 'bg-green-500/40 scale-105' : ''
+          }`}
+          onClick={(e) => {
+            if (!isDesignMode && student) {
+              e.stopPropagation();
+              onStudentClick?.(desk, 0);
+            }
+          }}
+        >
+          {student?.name}
+          {student?.needsFront && (
             <div className="w-2 h-2 rounded-full bg-yellow-400 absolute top-2 right-2" title="Nära tavlan" />
           )}
-          {students[0]?.needsWall && (
+          {student?.needsWall && (
             <div className="w-2 h-2 rounded-full bg-green-400 absolute top-2 left-2" title="Vid vägg" />
           )}
         </div>
@@ -59,7 +73,7 @@ const DeskItem = ({
 
     // For multiple capacity desks, show names in grid
     return (
-      <div className="grid gap-1 p-2 w-full h-full pointer-events-none" style={{
+      <div className="grid gap-1 p-2 w-full h-full" style={{
         gridTemplateColumns: config.capacity === 2 ? 'repeat(2, 1fr)' :
                            config.capacity === 4 ? 'repeat(2, 1fr)' :
                            config.capacity === 5 ? 'repeat(3, 1fr)' :
@@ -67,8 +81,22 @@ const DeskItem = ({
       }}>
         {Array.from({ length: config.capacity }).map((_, idx) => {
           const student = students[idx];
+          const isStudentSelected = isSelected && selectedStudentIndex === idx;
           return (
-            <div key={idx} className="text-white text-[10px] font-semibold text-center bg-white/20 rounded px-1 flex items-center justify-center">
+            <div
+              key={idx}
+              className={`text-white text-[10px] font-semibold text-center bg-white/20 rounded px-1 flex items-center justify-center transition-all ${
+                student && !isDesignMode ? 'cursor-pointer hover:bg-white/30' : ''
+              } ${
+                isStudentSelected ? 'bg-green-500/60 ring-2 ring-green-300 scale-110' : ''
+              }`}
+              onClick={(e) => {
+                if (!isDesignMode && student) {
+                  e.stopPropagation();
+                  onStudentClick?.(desk, idx);
+                }
+              }}
+            >
               {student ? (
                 <span className="truncate">
                   {student.name}
@@ -88,9 +116,9 @@ const DeskItem = ({
   return (
     <div
       className={`desk-item absolute rounded-xl shadow-lg transition-all duration-200 flex items-center justify-center bg-gradient-to-br ${config.color} ${
-        isDesignMode ? 'cursor-move' : 'cursor-pointer'
+        isDesignMode ? 'cursor-move' : 'cursor-default'
       } ${
-        isSelected ? 'ring-4 ring-green-400 scale-110 z-50 shadow-2xl' : 'hover:scale-105 hover:shadow-xl'
+        isSelected ? 'ring-2 ring-green-300 z-50' : 'hover:shadow-xl'
       } ${isLocked ? 'ring-2 ring-purple-400' : ''}`}
       style={{
         left: desk.x + 'px',
@@ -105,8 +133,10 @@ const DeskItem = ({
         }
       }}
       onClick={(e) => {
-        e.stopPropagation();
-        onClick(desk);
+        if (isDesignMode) {
+          e.stopPropagation();
+          onClick(desk);
+        }
       }}
     >
       {renderContent()}
@@ -124,12 +154,11 @@ const DeskItem = ({
             <X size={14} />
           </button>
           <button
-            className="absolute -top-2 -left-2 w-6 h-6 bg-blue-500 hover:bg-blue-600 text-white rounded-full flex items-center justify-center shadow-md transition-all hover:scale-110 z-10 print:hidden"
-            onClick={(e) => {
-              e.stopPropagation();
-              onRotate(desk.id);
+            className="absolute -top-2 -left-2 w-6 h-6 bg-blue-500 hover:bg-blue-600 text-white rounded-full flex items-center justify-center shadow-md transition-all hover:scale-110 z-10 print:hidden cursor-grab active:cursor-grabbing"
+            onMouseDown={(e) => {
+              onRotate(desk, e);
             }}
-            title="Rotera 15°"
+            title="Håll och dra för att rotera"
           >
             <RotateCcw size={14} />
           </button>
@@ -152,13 +181,6 @@ const DeskItem = ({
           {isLocked ? <Lock size={12} fill="currentColor" /> : <Unlock size={12} />}
         </button>
       )}
-
-      {/* Selected indicator */}
-      {isSelected && !isDesignMode && (
-        <div className="absolute -top-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white text-xs px-2 py-1 rounded-full flex items-center gap-1 shadow-lg print:hidden">
-          <Move size={10} /> Välj plats
-        </div>
-      )}
     </div>
   );
 };
@@ -179,6 +201,8 @@ const FreePositioningCanvas = ({
   const [draggedDesk, setDraggedDesk] = useState(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [nextDeskId, setNextDeskId] = useState(0);
+  const [rotatingDesk, setRotatingDesk] = useState(null);
+  const [rotationStart, setRotationStart] = useState(null);
 
   useEffect(() => {
     if (desks.length > 0) {
@@ -225,32 +249,60 @@ const FreePositioningCanvas = ({
   };
 
   const handleMouseMove = (e) => {
-    if (!draggedDesk || !canvasRef.current) return;
-
+    if (!canvasRef.current) return;
     const rect = canvasRef.current.getBoundingClientRect();
-    const config = DESK_TYPES[draggedDesk.type];
 
-    let newX = e.clientX - dragOffset.x;
-    let newY = e.clientY - dragOffset.y;
+    // Handle dragging
+    if (draggedDesk) {
+      const config = DESK_TYPES[draggedDesk.type];
 
-    // Constrain to canvas
-    newX = Math.max(0, Math.min(newX, rect.width - config.width));
-    newY = Math.max(80, Math.min(newY, rect.height - config.height));
+      let newX = e.clientX - dragOffset.x;
+      let newY = e.clientY - dragOffset.y;
 
-    const updatedDesks = desks.map(d =>
-      d.id === draggedDesk.id ? { ...d, x: newX, y: newY } : d
-    );
+      // Constrain to canvas
+      newX = Math.max(0, Math.min(newX, rect.width - config.width));
+      newY = Math.max(80, Math.min(newY, rect.height - config.height));
 
-    onDesksChange(updatedDesks);
-    setDraggedDesk({ ...draggedDesk, x: newX, y: newY });
+      const updatedDesks = desks.map(d =>
+        d.id === draggedDesk.id ? { ...d, x: newX, y: newY } : d
+      );
+
+      onDesksChange(updatedDesks);
+      setDraggedDesk({ ...draggedDesk, x: newX, y: newY });
+    }
+
+    // Handle rotation
+    if (rotatingDesk && rotationStart) {
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      const currentAngle = Math.atan2(
+        mouseY - rotationStart.centerY,
+        mouseX - rotationStart.centerX
+      ) * (180 / Math.PI);
+
+      const angleDiff = currentAngle - rotationStart.startAngle;
+      let newRotation = rotationStart.initialRotation + angleDiff;
+
+      // Normalize to 0-360
+      newRotation = ((newRotation % 360) + 360) % 360;
+
+      const updatedDesks = desks.map(d =>
+        d.id === rotatingDesk.id ? { ...d, rotation: Math.round(newRotation) } : d
+      );
+
+      onDesksChange(updatedDesks);
+    }
   };
 
   const handleMouseUp = () => {
     setDraggedDesk(null);
+    setRotatingDesk(null);
+    setRotationStart(null);
   };
 
   useEffect(() => {
-    if (draggedDesk) {
+    if (draggedDesk || rotatingDesk) {
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
       return () => {
@@ -258,22 +310,31 @@ const FreePositioningCanvas = ({
         document.removeEventListener('mouseup', handleMouseUp);
       };
     }
-  }, [draggedDesk, dragOffset]);
+  }, [draggedDesk, dragOffset, rotatingDesk, rotationStart, desks]);
 
   const handleDeleteDesk = (deskId) => {
     onDesksChange(desks.filter(d => d.id !== deskId));
   };
 
-  const handleRotateDesk = (deskId) => {
-    const updatedDesks = desks.map(d => {
-      if (d.id === deskId) {
-        const currentRotation = d.rotation || 0;
-        const newRotation = (currentRotation + 15) % 360;
-        return { ...d, rotation: newRotation };
-      }
-      return d;
+  const handleRotateStart = (desk, e) => {
+    e.stopPropagation();
+    const config = DESK_TYPES[desk.type];
+    const deskCenterX = desk.x + config.width / 2;
+    const deskCenterY = desk.y + config.height / 2;
+
+    const rect = canvasRef.current.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    const startAngle = Math.atan2(mouseY - deskCenterY, mouseX - deskCenterX) * (180 / Math.PI);
+
+    setRotatingDesk(desk);
+    setRotationStart({
+      startAngle,
+      initialRotation: desk.rotation || 0,
+      centerX: deskCenterX,
+      centerY: deskCenterY
     });
-    onDesksChange(updatedDesks);
   };
 
   const handleDeskClick = (desk) => {
@@ -281,9 +342,36 @@ const FreePositioningCanvas = ({
     onDeskSelect?.(desk);
   };
 
-  // Calculate statistics
+  // Calculate statistics and bounding box for print
   const totalSeats = desks.reduce((sum, desk) => sum + desk.capacity, 0);
   const assignedStudents = desks.reduce((sum, desk) => sum + (desk.students?.length || 0), 0);
+
+  // Calculate the actual bounding box of all desks for print optimization
+  const calculateBoundingBox = () => {
+    if (desks.length === 0) return { width: 1000, height: 700 };
+
+    let minX = Infinity, minY = Infinity, maxX = 0, maxY = 0;
+
+    desks.forEach(desk => {
+      const config = DESK_TYPES[desk.type];
+      // Account for rotation - use a generous bounding box
+      const diagonal = Math.sqrt(config.width ** 2 + config.height ** 2);
+      const centerX = desk.x + config.width / 2;
+      const centerY = desk.y + config.height / 2;
+
+      minX = Math.min(minX, centerX - diagonal / 2);
+      minY = Math.min(minY, centerY - diagonal / 2);
+      maxX = Math.max(maxX, centerX + diagonal / 2);
+      maxY = Math.max(maxY, centerY + diagonal / 2);
+    });
+
+    return {
+      width: Math.max(1000, maxX + 50),
+      height: Math.max(700, maxY + 50)
+    };
+  };
+
+  const boundingBox = calculateBoundingBox();
 
   return (
     <div className="space-y-4 free-positioning-canvas-wrapper">
@@ -341,11 +429,13 @@ const FreePositioningCanvas = ({
               desk={desk}
               onDragStart={handleDeskDragStart}
               onDelete={handleDeleteDesk}
-              onRotate={handleRotateDesk}
+              onRotate={handleRotateStart}
               onToggleLock={onToggleLock}
               isLocked={lockedDesks.has(desk.id)}
-              isSelected={selectedDesk?.id === desk.id}
+              isSelected={selectedDesk?.deskId === desk.id}
+              selectedStudentIndex={selectedDesk?.deskId === desk.id ? selectedDesk.studentIndex : -1}
               onClick={handleDeskClick}
+              onStudentClick={onDeskSelect}
               students={desk.students || []}
               isDesignMode={isDesignMode}
             />

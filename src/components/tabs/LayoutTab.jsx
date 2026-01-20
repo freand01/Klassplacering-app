@@ -231,22 +231,35 @@ const LayoutTab = ({ showNotification }) => {
     updateActivePlanInState({ lockedDesks: Array.from(newLockedDesks) });
   };
 
-  const handleDeskSelect = (desk) => {
+  const handleDeskSelect = (desk, studentIndex) => {
     if (isDesignMode) return;
 
+    const student = desk.students?.[studentIndex];
+    if (!student) return; // Can't select empty seat
+
     if (!selectedDesk) {
-      // Select first desk
-      setSelectedDesk(desk);
-    } else if (selectedDesk.id === desk.id) {
-      // Deselect
+      // Select first student
+      setSelectedDesk({ deskId: desk.id, studentIndex });
+    } else if (selectedDesk.deskId === desk.id && selectedDesk.studentIndex === studentIndex) {
+      // Deselect same student
       setSelectedDesk(null);
     } else {
-      // Swap students between desks
+      // Swap individual students between desks
+      const selectedDeskObj = desks.find(d => d.id === selectedDesk.deskId);
+      if (!selectedDeskObj) return;
+
+      const student1 = selectedDeskObj.students[selectedDesk.studentIndex];
+      const student2 = desk.students[studentIndex];
+
       const updatedDesks = desks.map(d => {
-        if (d.id === selectedDesk.id) {
-          return { ...d, students: desk.students || [] };
+        if (d.id === selectedDesk.deskId) {
+          const newStudents = [...d.students];
+          newStudents[selectedDesk.studentIndex] = student2;
+          return { ...d, students: newStudents };
         } else if (d.id === desk.id) {
-          return { ...d, students: selectedDesk.students || [] };
+          const newStudents = [...d.students];
+          newStudents[studentIndex] = student1;
+          return { ...d, students: newStudents };
         }
         return d;
       });
@@ -254,7 +267,7 @@ const LayoutTab = ({ showNotification }) => {
       setDesks(updatedDesks);
       setSelectedDesk(null);
       updateActivePlanInState({ desks: updatedDesks });
-      showNotification('Elever bytte plats', 'success');
+      showNotification(`${student1.name} och ${student2.name} bytte plats`, 'success');
     }
   };
 

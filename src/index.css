@@ -4,18 +4,35 @@
 
 /* Print styles for free positioning canvas */
 @media print {
+  @page {
+    size: A4;
+    margin: 10mm;
+  }
+
+  body {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
   .free-positioning-canvas-wrapper {
     width: 100% !important;
-    min-width: 100% !important;
-    max-width: none !important;
+    max-width: 100% !important;
+    overflow: visible !important;
   }
 
   .free-positioning-canvas {
-    width: 210mm !important;
-    min-width: 210mm !important;
+    position: relative !important;
+    width: 100% !important;
+    max-width: 190mm !important;
     height: auto !important;
-    min-height: 297mm !important;
+    min-height: auto !important;
     overflow: visible !important;
     page-break-inside: avoid;
+    transform-origin: top left;
+  }
+
+  /* Scale down if content is too wide */
+  .free-positioning-canvas > * {
+    max-width: 100%;
   }
 }
