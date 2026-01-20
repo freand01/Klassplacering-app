@@ -244,30 +244,52 @@ const LayoutTab = ({ showNotification }) => {
       // Deselect same student
       setSelectedDesk(null);
     } else {
-      // Swap individual students between desks
+      // Swap individual students
       const selectedDeskObj = desks.find(d => d.id === selectedDesk.deskId);
       if (!selectedDeskObj) return;
 
       const student1 = selectedDeskObj.students[selectedDesk.studentIndex];
       const student2 = desk.students[studentIndex];
 
-      const updatedDesks = desks.map(d => {
-        if (d.id === selectedDesk.deskId) {
-          const newStudents = [...d.students];
-          newStudents[selectedDesk.studentIndex] = student2;
-          return { ...d, students: newStudents };
-        } else if (d.id === desk.id) {
-          const newStudents = [...d.students];
-          newStudents[studentIndex] = student1;
-          return { ...d, students: newStudents };
-        }
-        return d;
-      });
+      // Check if swapping within the same desk
+      if (selectedDesk.deskId === desk.id) {
+        // Same desk - swap two students within same group
+        const updatedDesks = desks.map(d => {
+          if (d.id === desk.id) {
+            const newStudents = [...d.students];
+            // Classic swap using temp variable
+            const temp = newStudents[selectedDesk.studentIndex];
+            newStudents[selectedDesk.studentIndex] = newStudents[studentIndex];
+            newStudents[studentIndex] = temp;
+            return { ...d, students: newStudents };
+          }
+          return d;
+        });
 
-      setDesks(updatedDesks);
-      setSelectedDesk(null);
-      updateActivePlanInState({ desks: updatedDesks });
-      showNotification(`${student1.name} och ${student2.name} bytte plats`, 'success');
+        setDesks(updatedDesks);
+        setSelectedDesk(null);
+        updateActivePlanInState({ desks: updatedDesks });
+        showNotification(`${student1.name} och ${student2.name} bytte plats`, 'success');
+      } else {
+        // Different desks - swap between desks
+        const updatedDesks = desks.map(d => {
+          if (d.id === selectedDesk.deskId) {
+            const newStudents = [...d.students];
+            newStudents[selectedDesk.studentIndex] = student2;
+            return { ...d, students: newStudents };
+          } else if (d.id === desk.id) {
+            const newStudents = [...d.students];
+            newStudents[studentIndex] = student1;
+            return { ...d, students: newStudents };
+          }
+          return d;
+        });
+
+        setDesks(updatedDesks);
+        setSelectedDesk(null);
+        updateActivePlanInState({ desks: updatedDesks });
+        showNotification(`${student1.name} och ${student2.name} bytte plats`, 'success');
+      }
     }
   };
 

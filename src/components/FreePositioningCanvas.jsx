@@ -403,11 +403,11 @@ const FreePositioningCanvas = ({
         onClick={handleCanvasClick}
       >
         {/* Whiteboard */}
-        <div className="absolute top-0 left-0 right-0 h-16 bg-gradient-to-b from-gray-800 via-gray-700 to-gray-800 flex items-center justify-center text-white font-bold text-lg tracking-widest shadow-lg z-10 border-b-4 border-gray-900">
+        <div className="absolute top-0 left-0 right-0 h-16 bg-gradient-to-b from-gray-800 via-gray-700 to-gray-800 flex items-center justify-center text-white font-bold text-lg tracking-widest shadow-lg z-10 border-b-4 border-gray-900 print:w-full print:left-0 print:right-0">
           <div className="flex items-center gap-3">
-            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div>
+            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse print:hidden"></div>
             WHITEBOARD
-            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div>
+            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse print:hidden"></div>
           </div>
         </div>
 
