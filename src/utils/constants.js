@@ -9,6 +9,7 @@ export const DEFAULT_COLS = 12;
 export const ALGORITHM_CONSTANTS = {
   OPTIMIZATION_ITERATIONS: 3000,
   HARD_CONSTRAINT_PENALTY: 5000,
+  SOLO_PENALTY: 5000,       // Penalty when a student who needs to sit alone has neighbors
   ISOLATION_PENALTY: 500,
   HISTORY_PENALTY: 50,
   ROW_PENALTY_MULTIPLIER: 20,

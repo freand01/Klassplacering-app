@@ -82,7 +82,27 @@ export class SeatingOptimizer {
       return false;
     };
 
-    // Priority 1: Front
+    // Priority 1: Solo (ska sitta själv) - placera vid platser utan grannplatser om möjligt
+    const soloGroup = pool.filter(s => s.needsSolo);
+    pool = pool.filter(s => !s.needsSolo);
+    soloGroup.forEach(student => {
+      // Försök hitta en plats där inga av de fyra grannpositionerna är giltiga platser
+      const isIsolatedSeat = (idx) => {
+        const r = Math.floor(idx / this.cols);
+        const c = idx % this.cols;
+        const hasRight  = c < this.cols - 1 && this.seatMap[idx + 1];
+        const hasLeft   = c > 0             && this.seatMap[idx - 1];
+        const hasBottom = r < this.rows - 1 && this.seatMap[idx + this.cols];
+        const hasTop    = r > 0             && this.seatMap[idx - this.cols];
+        return !hasRight && !hasLeft && !hasBottom && !hasTop;
+      };
+      if (!placeStudentAtFirstAvailable(student, isIsolatedSeat)) {
+        // Fallback: placera var som helst om inga isolerade platser finns
+        placeStudentAtFirstAvailable(student);
+      }
+    });
+
+    // Priority 2: Front
     const frontGroup = pool.filter(s => s.needsFront);
     pool = pool.filter(s => !s.needsFront);
     frontGroup.forEach(student => {
@@ -91,20 +111,22 @@ export class SeatingOptimizer {
       }
     });
 
-    // Priority 2: Wall
+    // Priority 3: Wall (vid vägg) - placeras i kolumn 0 (längst till vänster) eller kolumn cols-1 (längst till höger)
     const wallGroup = pool.filter(s => s.needsWall);
     pool = pool.filter(s => !s.needsWall);
     wallGroup.forEach(student => {
-      const isWall = (idx) => {
+      // Väggplatser är de som befinner sig i den vänstraste (kolumn 0) eller högraste (sista kolumnen) kolumnen
+      const isWallSeat = (idx) => {
         const c = idx % this.cols;
         return c === 0 || c === this.cols - 1;
       };
-      if (!placeStudentAtFirstAvailable(student, isWall)) {
+      if (!placeStudentAtFirstAvailable(student, isWallSeat)) {
+        // Fallback: placera var som helst om inga väggplatser finns
         placeStudentAtFirstAvailable(student);
       }
     });
 
-    // Priority 3: Rest
+    // Priority 4: Rest
     pool.forEach(student => {
       placeStudentAtFirstAvailable(student);
     });
@@ -158,6 +180,7 @@ export class SeatingOptimizer {
     const r = Math.floor(index / this.cols);
     const c = index % this.cols;
     if (student.needsFront && r !== 0) return false;
+    // Väggplatser är kolumn 0 (längst till vänster) och kolumn cols-1 (längst till höger)
     if (student.needsWall && c !== 0 && c !== this.cols - 1) return false;
     return true;
   }
@@ -201,6 +224,11 @@ export class SeatingOptimizer {
       if (r > 0 && this.seatMap[i - this.cols] && gridToCheck[i - this.cols]) neighborCount++;
 
       if (neighborCount === 0) score += ALGORITHM_CONSTANTS.ISOLATION_PENALTY;
+
+      // Solo-straff: elev som ska sitta själv får ett hårt straff om den har grannar
+      if (gridToCheck[i].needsSolo && neighborCount > 0) {
+        score += ALGORITHM_CONSTANTS.SOLO_PENALTY * neighborCount;
+      }
 
       // History penalty
       if (c < this.cols - 1) {
