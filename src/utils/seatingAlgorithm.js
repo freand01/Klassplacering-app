@@ -10,6 +10,22 @@ export class SeatingOptimizer {
     this.rows = rows;
     this.cols = cols;
     this.validIndices = seatMap.map((isSeat, idx) => isSeat ? idx : -1).filter(idx => idx !== -1);
+
+    // NYTT: Räkna ut vilka bänkar som faktiskt är vid "väggen" (längst till vänster/höger på varje rad)
+    this.wallIndices = new Set();
+    for (let r = 0; r < this.rows; r++) {
+      let firstSeat = -1;
+      let lastSeat = -1;
+      for (let c = 0; c < this.cols; c++) {
+        const idx = r * this.cols + c;
+        if (this.seatMap[idx]) {
+          if (firstSeat === -1) firstSeat = idx;
+          lastSeat = idx;
+        }
+      }
+      if (firstSeat !== -1) this.wallIndices.add(firstSeat);
+      if (lastSeat !== -1 && lastSeat !== firstSeat) this.wallIndices.add(lastSeat);
+    }
   }
 
   generateSeating() {
@@ -72,9 +88,11 @@ export class SeatingOptimizer {
   }
 
   placeStudentsByPriority(grid, pool, takenIndices) {
-    const placeStudentAtFirstAvailable = (student, criteriaFn = () => true) => {
-      const spot = this.validIndices.find(idx => !takenIndices.has(idx) && criteriaFn(idx));
-      if (spot !== undefined) {
+    // NYTT: Välj en SLUMPMÄSSIG ledig plats bland de som matchar kriteriet, istället för den första i listan
+    const placeStudentAtRandomAvailable = (student, criteriaFn = () => true) => {
+      const availableSpots = this.validIndices.filter(idx => !takenIndices.has(idx) && criteriaFn(idx));
+      if (availableSpots.length > 0) {
+        const spot = availableSpots[Math.floor(Math.random() * availableSpots.length)];
         grid[spot] = student;
         takenIndices.add(spot);
         return true;
@@ -86,8 +104,11 @@ export class SeatingOptimizer {
     const frontGroup = pool.filter(s => s.needsFront);
     pool = pool.filter(s => !s.needsFront);
     frontGroup.forEach(student => {
-      if (!placeStudentAtFirstAvailable(student, idx => Math.floor(idx / this.cols) === 0)) {
-        placeStudentAtFirstAvailable(student);
+      // Försök placera på rad 0, ryms de inte testa rad 1
+      if (!placeStudentAtRandomAvailable(student, idx => Math.floor(idx / this.cols) === 0)) {
+        if (!placeStudentAtRandomAvailable(student, idx => Math.floor(idx / this.cols) === 1)) {
+           placeStudentAtRandomAvailable(student);
+        }
       }
     });
 
@@ -95,18 +116,15 @@ export class SeatingOptimizer {
     const wallGroup = pool.filter(s => s.needsWall);
     pool = pool.filter(s => !s.needsWall);
     wallGroup.forEach(student => {
-      const isWall = (idx) => {
-        const c = idx % this.cols;
-        return c === 0 || c === this.cols - 1;
-      };
-      if (!placeStudentAtFirstAvailable(student, isWall)) {
-        placeStudentAtFirstAvailable(student);
+      // Använd den nya dynamiska wallIndices
+      if (!placeStudentAtRandomAvailable(student, idx => this.wallIndices.has(idx))) {
+        placeStudentAtRandomAvailable(student);
       }
     });
 
     // Priority 3: Rest
     pool.forEach(student => {
-      placeStudentAtFirstAvailable(student);
+      placeStudentAtRandomAvailable(student);
     });
 
     return grid;
@@ -156,9 +174,13 @@ export class SeatingOptimizer {
   isValidPos(student, index) {
     if (!student) return true;
     const r = Math.floor(index / this.cols);
-    const c = index % this.cols;
-    if (student.needsFront && r !== 0) return false;
-    if (student.needsWall && c !== 0 && c !== this.cols - 1) return false;
+
+    // NYTT: Tillåt rad 0 och rad 1 om man behöver sitta fram (bra om många har detta behov)
+    if (student.needsFront && r > 1) return false;
+    
+    // NYTT: Använd den nya dynamiska bedömningen för väggarna
+    if (student.needsWall && !this.wallIndices.has(index)) return false;
+    
     return true;
   }
 
@@ -189,9 +211,13 @@ export class SeatingOptimizer {
       if (!gridToCheck[i]) continue;
       const r = Math.floor(i / this.cols);
       const c = i % this.cols;
+      const student = gridToCheck[i];
 
-      // Prefer front rows
-      score += r * ALGORITHM_CONSTANTS.ROW_PENALTY_MULTIPLIER;
+      // NYTT: Ge BARA minuspoäng (för att sitta längre bak) till de elever som faktiskt 
+      // MÅSTE sitta framme. Detta löser problemet med att alla trycktes fram.
+      if (student.needsFront) {
+        score += r * ALGORITHM_CONSTANTS.ROW_PENALTY_MULTIPLIER * 10;
+      }
 
       // Check isolation
       let neighborCount = 0;
