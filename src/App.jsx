@@ -60,13 +60,11 @@ const AppContent = () => {
     });
   };
 
+  // UPPDATERAD FÖR ATT LÄSA IN FRIA BÄNKAR
   const handleLoadPlan = (plan) => {
     const updates = {
-      layout: plan.layout,
-      seatMap: plan.seatMap || Array(plan.rows * plan.cols).fill(true),
-      locked: plan.locked || [],
-      rows: plan.rows,
-      cols: plan.cols
+      desks: plan.desks || [],
+      lockedDesks: plan.lockedDesks || []
     };
     dispatch({
       type: ACTIONS.UPDATE_ACTIVE_PLAN,
@@ -119,7 +117,7 @@ const AppContent = () => {
       }
     };
     reader.readAsText(file);
-    e.target.value = ''; // Reset input
+    e.target.value = ''; 
   };
 
   const tabs = [
