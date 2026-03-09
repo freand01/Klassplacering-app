@@ -168,7 +168,6 @@ const LayoutTab = ({ showNotification }) => {
     setGenerationMsg("Analyserar och placerar...");
 
     setTimeout(() => {
-      // Här anropar vi den nya hjärnan (som vi bygger i nästa steg)
       const optimizer = new SeatingOptimizer({
         students,
         constraints,
@@ -334,51 +333,71 @@ const LayoutTab = ({ showNotification }) => {
             </div>
 
             {/* Möbleringsmallar och rensa */}
-            <div className="flex flex-wrap gap-4 justify-between items-end mt-2 border-t border-purple-200 pt-3">
-              <div className="flex flex-wrap gap-2 items-end flex-grow">
-                <div className="flex-1 min-w-[200px] max-w-xs">
-                  <h4 className="text-xs font-bold text-purple-900 uppercase tracking-wider mb-1 flex items-center gap-1">
-                    <Layout size={14} /> Sparade mallar
-                  </h4>
-                  <select
-                    className="w-full p-2 text-sm border border-purple-200 rounded-lg text-gray-700 bg-white"
-                    onChange={(e) => { if (e.target.value) loadRoomLayout(e.target.value); }}
-                    value=""
-                  >
-                    <option value="" disabled>Ladda mall...</option>
-                    {getRoomLayouts().map(l => (
-                      <option key={l.id} value={l.id}>{l.name}</option>
-                    ))}
-                  </select>
+            <div className="flex flex-col gap-2 mt-2 border-t border-purple-200 pt-3">
+              <div className="flex flex-wrap gap-4 justify-between items-end">
+                <div className="flex flex-wrap gap-2 items-end flex-grow">
+                  <div className="flex-1 min-w-[200px] max-w-xs">
+                    <h4 className="text-xs font-bold text-purple-900 uppercase tracking-wider mb-1 flex items-center gap-1">
+                      <Layout size={14} /> Sparade mallar
+                    </h4>
+                    <select
+                      className="w-full p-2 text-sm border border-purple-200 rounded-lg text-gray-700 bg-white"
+                      onChange={(e) => { if (e.target.value) loadRoomLayout(e.target.value); }}
+                      value=""
+                    >
+                      <option value="" disabled>Ladda mall...</option>
+                      {getRoomLayouts().map(l => (
+                        <option key={l.id} value={l.id}>{l.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Namn på mall..."
+                      className="p-2 text-sm border border-purple-200 rounded-lg w-32 bg-white"
+                      value={layoutName}
+                      onChange={e => setLayoutName(e.target.value)}
+                    />
+                    <button
+                      onClick={saveRoomLayout}
+                      disabled={!layoutName.trim() || desks.length === 0}
+                      className="px-3 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 disabled:bg-purple-300 flex items-center gap-1"
+                    >
+                      <FilePlus size={14} /> Spara
+                    </button>
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    placeholder="Namn på mall..."
-                    className="p-2 text-sm border border-purple-200 rounded-lg w-32 bg-white"
-                    value={layoutName}
-                    onChange={e => setLayoutName(e.target.value)}
-                  />
-                  <button
-                    onClick={saveRoomLayout}
-                    disabled={!layoutName.trim() || desks.length === 0}
-                    className="px-3 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 disabled:bg-purple-300 flex items-center gap-1"
-                  >
-                    <FilePlus size={14} /> Spara
-                  </button>
-                </div>
+                
+                <button
+                  onClick={() => {
+                    setDesks([]);
+                    updateActivePlanInState({ desks: [] });
+                    showNotification('Klassrummet rensat', 'info');
+                  }}
+                  className="text-xs font-medium text-red-600 hover:text-red-800 hover:bg-red-50 px-3 py-2 rounded-lg border border-red-200 flex items-center gap-1 transition-colors"
+                >
+                  <RotateCcw size={12} /> Rensa klassrum
+                </button>
               </div>
-              
-              <button
-                onClick={() => {
-                  setDesks([]);
-                  updateActivePlanInState({ desks: [] });
-                  showNotification('Klassrummet rensat', 'info');
-                }}
-                className="text-xs font-medium text-red-600 hover:text-red-800 hover:bg-red-50 px-3 py-2 rounded-lg border border-red-200 flex items-center gap-1 transition-colors"
-              >
-                <RotateCcw size={12} /> Rensa klassrum
-              </button>
+
+              {/* LISTA MED SPARADE MALLAR OCH RADERA-KNAPPEN (DENNA FIXAR BYGGFELET) */}
+              {getRoomLayouts().length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {getRoomLayouts().map(l => (
+                    <div key={l.id} className="text-xs bg-white border border-purple-100 rounded px-2 py-1 flex items-center gap-2 text-purple-800">
+                      {l.name}
+                      <button
+                        onClick={() => deleteRoomLayout(l.id)}
+                        className="text-purple-300 hover:text-red-500"
+                        aria-label={`Ta bort ${l.name}`}
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
